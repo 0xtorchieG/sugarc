@@ -9,6 +9,8 @@
     --primary: 222 47% 11%;
     --primary-foreground: 210 40% 98%;
     --accent: 210 40% 96%;
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 16% 47%;
     --input: 214 32% 91%;
   }
   body {

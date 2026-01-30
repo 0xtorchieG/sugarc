@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
-import { ThirdwebProvider } from "thirdweb/react";
-import { client } from "@/lib/thirdweb";
+import { AppShell } from "@/components/layout/app-shell";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -16,7 +15,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
-        <ThirdwebProvider client={client}>{children}</ThirdwebProvider>
+        <AppShell>{children}</AppShell>
       </body>
     </html>
   );

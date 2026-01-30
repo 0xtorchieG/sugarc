@@ -1,23 +1,32 @@
-import { ConnectButton } from "thirdweb/react";
-import { client } from "@/lib/thirdweb";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
-
-const clientId = process.env.NEXT_PUBLIC_THIRDWEB_CLIENT_ID;
+import { Container } from "@/components/layout/container";
 
 export default function Home() {
   return (
-    <main className="min-h-screen flex flex-col items-center justify-center p-8">
-      <h1 className="text-3xl font-bold mb-4">🍬 Sugarc</h1>
-      <p className="text-muted-foreground mb-6">
-        Tokenized invoice factoring on Arc
-      </p>
-      {clientId ? (
-        <ConnectButton client={client} theme="dark" />
-      ) : (
-        <Button variant="outline" disabled>
-          Set NEXT_PUBLIC_THIRDWEB_CLIENT_ID to connect
-        </Button>
-      )}
-    </main>
+    <Container>
+      <div className="flex min-h-[60vh] flex-col items-center justify-center gap-8 py-12 text-center">
+        <h1 className="text-4xl font-bold tracking-tight sm:text-5xl">
+          🍬 Sugarc
+        </h1>
+        <p className="max-w-md text-lg text-muted-foreground">
+          Tokenized invoice factoring on Arc — instant SMB cashflow, real
+          on-chain yield.
+        </p>
+        <div className="flex flex-col gap-4 sm:flex-row">
+          <Button asChild size="lg">
+            <Link href="/lp">I&apos;m a Liquidity Provider</Link>
+          </Button>
+          <Button asChild variant="outline" size="lg">
+            <Link href="/smb">I&apos;m an SMB</Link>
+          </Button>
+        </div>
+        <div className="pt-4">
+          <Button asChild variant="outline" size="lg">
+            <Link href="/auth">Connect wallet</Link>
+          </Button>
+        </div>
+      </div>
+    </Container>
   );
 }
