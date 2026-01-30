@@ -1,5 +1,13 @@
 "use client";
 
+/**
+ * Circle "Create User Wallets with Social Login" flow.
+ * Docs: https://developers.circle.com/wallets/user-controlled/create-user-wallets-with-social-login
+ *
+ * Difference from official single-page example: we use redirectUri = origin + '/auth'
+ * so users return to this page after Google login (official uses window.location.origin on one page at /).
+ */
+
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { setCookie, getCookie } from "cookies-next";
@@ -25,6 +33,8 @@ type Wallet = {
 
 export default function AuthPage() {
   const sdkRef = useRef<W3SSdk | null>(null);
+  /** True while component is mounted; handler uses this so callback from SDK (async) still applies state. */
+  const acceptingLoginRef = useRef(true);
 
   const [sdkReady, setSdkReady] = useState(false);
   const [deviceId, setDeviceId] = useState<string>("");
@@ -42,30 +52,76 @@ export default function AuthPage() {
   const [status, setStatus] = useState<string>("Ready");
 
   useEffect(() => {
+    acceptingLoginRef.current = true;
     let cancelled = false;
+    const log = (msg: string, data?: object) => {
+      console.log("[Circle Auth]", msg, data ?? "");
+    };
+
+    if (typeof window !== "undefined") {
+      const hasHash = !!window.location.hash;
+      log("auth page mount", {
+        pathname: window.location.pathname,
+        hasHash,
+        hashLength: window.location.hash?.length ?? 0,
+        search: window.location.search || "(empty)",
+        localStorage_socialLoginProvider: window.localStorage.getItem("socialLoginProvider"),
+        localStorage_state: window.localStorage.getItem("state") ? "(set)" : "(missing)",
+        localStorage_nonce: window.localStorage.getItem("nonce") ? "(set)" : "(missing)",
+        sessionStorage_loginResult: window.sessionStorage.getItem("circle_login_result") ? "(set)" : "(missing)",
+      });
+      if (hasHash) {
+        log("OAuth hash present → SDK will process it and load iframe from https://pw-auth.circle.com; check Network tab for that request and any errors");
+      }
+    }
+
+    // Restore login result from sessionStorage (e.g. after redirect or re-mount)
+    const stored = typeof window !== "undefined" ? window.sessionStorage.getItem("circle_login_result") : null;
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored) as LoginResult;
+        if (parsed?.userToken && parsed?.encryptionKey) {
+          log("restored loginResult from sessionStorage");
+          setLoginResult(parsed);
+          setStatus("Login successful. Credentials received from Google.");
+        }
+      } catch {
+        // ignore invalid stored value
+      }
+    }
 
     const initSdk = async () => {
       try {
         const { W3SSdk } = await import("@circle-fin/w3s-pw-web-sdk");
 
+        // Use acceptingLoginRef so when SDK calls this later (after iframe), we still apply state (avoids Strict Mode stale closure)
         const onLoginComplete = (error: unknown, result: { userToken: string; encryptionKey: string }) => {
-          if (cancelled) return;
-
           if (error) {
-            const err = error as { message?: string };
-            console.log("Login failed:", err);
-            setLoginError(err.message || "Login failed");
-            setLoginResult(null);
-            setStatus("Login failed");
+            const err = error as { message?: string; code?: number };
+            log("onLoginComplete ERROR", { message: err?.message, code: err?.code });
+            if (acceptingLoginRef.current) {
+              setLoginError(err.message || "Login failed");
+              setLoginResult(null);
+              setStatus("Login failed");
+            }
+            if (typeof window !== "undefined") window.sessionStorage.removeItem("circle_login_result");
             return;
           }
-
-          setLoginResult({
+          log("onLoginComplete SUCCESS", { userTokenLength: result?.userToken?.length, encryptionKeyLength: result?.encryptionKey?.length });
+          const resultData = {
             userToken: result.userToken,
             encryptionKey: result.encryptionKey,
-          });
-          setLoginError(null);
-          setStatus("Login successful. Credentials received from Google.");
+          };
+          if (typeof window !== "undefined") {
+            window.sessionStorage.setItem("circle_login_result", JSON.stringify(resultData));
+          }
+          if (acceptingLoginRef.current) {
+            setLoginResult(resultData);
+            setLoginError(null);
+            setStatus("Login successful. Credentials received from Google.");
+          } else {
+            log("onLoginComplete SUCCESS but component was unmounted; result saved to sessionStorage, refresh to restore");
+          }
         };
 
         const restoredAppId = (getCookie("appId") as string) || appId || "";
@@ -75,6 +131,14 @@ export default function AuthPage() {
         const restoredDeviceEncryptionKey =
           (getCookie("deviceEncryptionKey") as string) || "";
 
+        log("SDK config", {
+          hasAppId: !!restoredAppId,
+          hasGoogleClientId: !!restoredGoogleClientId,
+          hasDeviceToken: !!restoredDeviceToken,
+          hasDeviceEncryptionKey: !!restoredDeviceEncryptionKey,
+          redirectUri: typeof window !== "undefined" ? `${window.location.origin}/auth` : "",
+        });
+
         const initialConfig = {
           appSettings: { appId: restoredAppId },
           loginConfigs: {
@@ -83,7 +147,9 @@ export default function AuthPage() {
             google: {
               clientId: restoredGoogleClientId,
               redirectUri:
-                typeof window !== "undefined" ? window.location.origin : "",
+                typeof window !== "undefined"
+                  ? `${window.location.origin}/auth`
+                  : "",
               selectAccountPrompt: true,
             },
           },
@@ -91,13 +157,24 @@ export default function AuthPage() {
 
         const sdk = new W3SSdk(initialConfig, onLoginComplete);
         sdkRef.current = sdk;
+        log("W3SSdk created, execSocialLoginStatusCheck runs inside SDK (checks hash + localStorage)");
 
         if (!cancelled) {
           setSdkReady(true);
-          setStatus("SDK initialized. Ready to create device token.");
+          // Restore device token state from cookies so UI shows correct step after redirect
+          if (restoredDeviceToken && restoredDeviceEncryptionKey) {
+            setDeviceToken(restoredDeviceToken);
+            setDeviceEncryptionKey(restoredDeviceEncryptionKey);
+            // SDK verifies the OAuth callback via iframe (async). Show waiting state until onLoginComplete fires.
+            const hasCallback = typeof window !== "undefined" && (window.location.hash || window.location.search.includes("code="));
+            log("restored device token from cookies", { hasCallback, hasHash: !!window.location?.hash });
+            setStatus(hasCallback ? "Completing sign-in... Waiting for verification." : "Returned from Google. You can continue with step 3.");
+          } else {
+            setStatus("SDK initialized. Ready to create device token.");
+          }
         }
       } catch (err) {
-        console.log("Failed to initialize Web SDK:", err);
+        log("Failed to initialize Web SDK", err);
         if (!cancelled) {
           setStatus("Failed to initialize Web SDK");
         }
@@ -108,8 +185,22 @@ export default function AuthPage() {
 
     return () => {
       cancelled = true;
+      acceptingLoginRef.current = false;
     };
   }, []);
+
+  // If we have device tokens (returned from Google) but no loginResult after a delay, show fallback hint
+  useEffect(() => {
+    if (!deviceToken || !deviceEncryptionKey || loginResult) return;
+    const t = setTimeout(() => {
+      setStatus((prev) =>
+        prev.includes("Completing sign-in") || prev.includes("Returned from Google")
+          ? "If step 3 doesn’t become available, refresh the page and click ‘Login with Google’ again."
+          : prev
+      );
+    }, 10000);
+    return () => clearTimeout(t);
+  }, [deviceToken, deviceEncryptionKey, loginResult]);
 
   useEffect(() => {
     const fetchDeviceId = async () => {
@@ -274,6 +365,9 @@ export default function AuthPage() {
   };
 
   const handleLoginWithGoogle = () => {
+    console.log("[Circle Auth] handleLoginWithGoogle clicked", {
+      redirectUri: typeof window !== "undefined" ? `${window.location.origin}/auth` : "",
+    });
     const sdk = sdkRef.current;
     if (!sdk) {
       setStatus("SDK not ready");
@@ -297,7 +391,7 @@ export default function AuthPage() {
         deviceEncryptionKey,
         google: {
           clientId: googleClientId,
-          redirectUri: window.location.origin,
+          redirectUri: `${window.location.origin}/auth`,
           selectAccountPrompt: true,
         },
       },
@@ -458,6 +552,10 @@ export default function AuthPage() {
 
         <p className="text-sm text-muted-foreground">
           <strong>Status:</strong> {status}
+        </p>
+
+        <p className="text-xs text-muted-foreground">
+          Debug: Open DevTools (F12) → Console, filter by &quot;Circle Auth&quot; to see SDK and callback logs.
         </p>
 
         {loginError && (
