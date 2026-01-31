@@ -13,6 +13,7 @@ import {
   TrendingUp,
   CheckCircle2,
 } from "lucide-react";
+import { useAuth } from "@/contexts/auth-context";
 import type { SmbLockedOffer } from "./types";
 import type { PoolKind } from "@/components/lp/types";
 import { cn } from "@/lib/utils";
@@ -35,7 +36,7 @@ const POOL_RISK: Record<PoolKind, { label: string; className: string }> = {
 interface OfferConfirmationProps {
   offer: SmbLockedOffer;
   onBack: () => void;
-  onSuccess?: (invoiceId: string) => void;
+  onSuccess?: (intentId: string) => void;
   className?: string;
 }
 
@@ -46,8 +47,10 @@ export function OfferConfirmation({
   className,
 }: OfferConfirmationProps) {
   const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
-  const [invoiceId, setInvoiceId] = useState<string | null>(null);
+  const [intentId, setIntentId] = useState<string | null>(null);
+  const [refHash, setRefHash] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const { wallet } = useAuth();
 
   const { input, pricing } = offer;
   const risk = POOL_RISK[pricing.eligiblePool];
@@ -63,10 +66,15 @@ export function OfferConfirmation({
     setStatus("loading");
     setErrorMessage(null);
     try {
+      const body = {
+        input: offer.input,
+        pricing: offer.pricing,
+        ...(wallet?.address && { smbAddress: wallet.address }),
+      };
       const res = await fetch("/api/smb/invoice-intent", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(offer),
+        body: JSON.stringify(body),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -74,8 +82,9 @@ export function OfferConfirmation({
         setStatus("error");
         return;
       }
-      const id = data.invoiceId as string;
-      setInvoiceId(id);
+      const id = data.intentId as string;
+      setIntentId(id);
+      setRefHash(data.refHash ?? null);
       setStatus("success");
       onSuccess?.(id);
     } catch {
@@ -84,7 +93,7 @@ export function OfferConfirmation({
     }
   }
 
-  if (status === "success" && invoiceId) {
+  if (status === "success" && intentId) {
     return (
       <Card className={cn("border-emerald-500/30", className)}>
         <CardHeader>
@@ -98,8 +107,13 @@ export function OfferConfirmation({
         </CardHeader>
         <CardContent className="space-y-2">
           <p className="text-sm font-medium">
-            Invoice ID: <span className="font-mono text-primary">{invoiceId}</span>
+            Intent ID: <span className="font-mono text-primary">{intentId}</span>
           </p>
+          {refHash && (
+            <p className="text-xs text-muted-foreground font-mono break-all">
+              refHash: {refHash}
+            </p>
+          )}
           <Button variant="outline" onClick={onBack} className="mt-4">
             Create another request
           </Button>
