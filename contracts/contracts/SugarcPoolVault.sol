@@ -1,18 +1,36 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+/*
+ *           .-~~~-.
+ *   .- ~ ~-(       )_ _
+ *  /                   ~ -.
+ * |                         \
+ *  \                       .'
+ *    ~- . _____________ . -~
+ *         |   SUGARC   |   / \
+ *          \_________/    (___)
+ *              |           
+ *           \  |  /
+ *            \ | /      / \
+ *             \|/      (___)
+ *              *
+ *           drip drip
+ */
+
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 /**
- * @title PoolVault
+ * @title SugarcPoolVault - ETHGlobal Online Hackathon project
  * @notice Arc liquidity hub with static risk pools for tokenized invoice factoring (Sugarc).
+ *         The purpose of this contract is to be used in the ETH Global online hackathon, and has not been developed for mainnet use. Use with caution.
  *         LPs deposit USDC into pools; SMB invoices draw from pool liquidity.
  *         Pool IDs: 0 = Prime, 1 = Standard, 2 = HighYield.
  */
-contract PoolVault is Ownable, ReentrancyGuard {
+contract SugarcPoolVault is Ownable, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     /// @notice Number of static pools (0 = Prime, 1 = Standard, 2 = HighYield)
@@ -97,7 +115,7 @@ contract PoolVault is Ownable, ReentrancyGuard {
     }
 
     constructor(address _usdc) Ownable(msg.sender) ReentrancyGuard() {
-        require(_usdc != address(0), "PoolVault: zero USDC address");
+        require(_usdc != address(0), "SugarcPoolVault: zero USDC address");
         usdc = IERC20(_usdc);
     }
 
@@ -117,7 +135,7 @@ contract PoolVault is Ownable, ReentrancyGuard {
      */
     function deposit(uint8 poolId, uint256 amount) external nonReentrant {
         if (poolId >= NUM_POOLS) revert InvalidPoolId();
-        require(amount > 0, "PoolVault: zero amount");
+        require(amount > 0, "SugarcPoolVault: zero amount");
 
         usdc.safeTransferFrom(msg.sender, address(this), amount);
 
@@ -177,8 +195,8 @@ contract PoolVault is Ownable, ReentrancyGuard {
         bytes32 refHash
     ) external onlyOwnerOrOperator nonReentrant {
         if (poolId >= NUM_POOLS) revert InvalidPoolId();
-        require(smb != address(0), "PoolVault: zero SMB");
-        require(advanceAmount > 0, "PoolVault: zero advance");
+        require(smb != address(0), "SugarcPoolVault: zero SMB");
+        require(advanceAmount > 0, "SugarcPoolVault: zero advance");
         if (_refHashToInvoiceId[refHash] != 0) revert DuplicateRefHash();
         if (faceAmount < advanceAmount) revert InvalidFaceAmount();
         if (feeBps > 10_000) revert FeeBpsTooHigh();
@@ -221,7 +239,7 @@ contract PoolVault is Ownable, ReentrancyGuard {
      * @param amount Max amount to repay; only up to remaining face is actually transferred.
      */
     function repayInvoice(uint256 invoiceId, uint256 amount) external nonReentrant {
-        require(amount > 0, "PoolVault: zero amount");
+        require(amount > 0, "SugarcPoolVault: zero amount");
         Invoice storage inv = invoices[invoiceId];
         if (inv.smb == address(0)) revert InvoiceNotFunded();
         if (inv.status != InvoiceStatus.Funded) revert InvoiceNotFunded();

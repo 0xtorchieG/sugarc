@@ -4,7 +4,7 @@ import { ARC_TESTNET_USDC } from "./constants";
 async function main() {
   const [deployer] = await ethers.getSigners();
   const network = await ethers.provider.getNetwork();
-  console.log("Deploying PoolVault with:", deployer.address, "network:", network.name, "chainId:", network.chainId);
+  console.log("Deploying SugarcPoolVault with:", deployer.address, "network:", network.name, "chainId:", network.chainId);
 
   let usdcAddress = process.env.USDC_ADDRESS;
 
@@ -20,11 +20,11 @@ async function main() {
     console.log("Using USDC at:", usdcAddress);
   }
 
-  const PoolVault = await ethers.getContractFactory("PoolVault");
-  const vault = await PoolVault.deploy(usdcAddress);
+  const SugarcPoolVault = await ethers.getContractFactory("SugarcPoolVault");
+  const vault = await SugarcPoolVault.deploy(usdcAddress);
   await vault.waitForDeployment();
 
-  console.log("PoolVault deployed to:", await vault.getAddress());
+  console.log("SugarcPoolVault deployed to:", await vault.getAddress());
 }
 
 main().catch((err) => {

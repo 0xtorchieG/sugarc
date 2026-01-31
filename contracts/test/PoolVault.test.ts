@@ -1,9 +1,9 @@
 import { expect } from "chai";
 import { ethers } from "hardhat";
 import { loadFixture } from "@nomicfoundation/hardhat-toolbox/network-helpers";
-import type { PoolVault, MintableERC20 } from "../typechain-types";
+import type { SugarcPoolVault, MintableERC20 } from "../typechain-types";
 
-describe("PoolVault", function () {
+describe("SugarcPoolVault", function () {
   const POOL_PRIME = 0;
   const POOL_STANDARD = 1;
   const POOL_HIGH_YIELD = 2;
@@ -20,8 +20,8 @@ describe("PoolVault", function () {
     await usdc.mint(lp1.address, mintAmount);
     await usdc.mint(lp2.address, mintAmount);
 
-    const PoolVaultFactory = await ethers.getContractFactory("PoolVault");
-    const vault = (await PoolVaultFactory.deploy(await usdc.getAddress())) as unknown as PoolVault;
+    const SugarcPoolVaultFactory = await ethers.getContractFactory("SugarcPoolVault");
+    const vault = (await SugarcPoolVaultFactory.deploy(await usdc.getAddress())) as unknown as SugarcPoolVault;
     await vault.waitForDeployment();
 
     return { vault, usdc, owner, lp1, lp2, smb, operator };
@@ -35,9 +35,9 @@ describe("PoolVault", function () {
     });
 
     it("should revert on zero USDC address", async function () {
-      const PoolVault = await ethers.getContractFactory("PoolVault");
-      await expect(PoolVault.deploy(ethers.ZeroAddress)).to.be.revertedWith(
-        "PoolVault: zero USDC address"
+      const SugarcPoolVault = await ethers.getContractFactory("SugarcPoolVault");
+      await expect(SugarcPoolVault.deploy(ethers.ZeroAddress)).to.be.revertedWith(
+        "SugarcPoolVault: zero USDC address"
       );
     });
   });
@@ -109,7 +109,7 @@ describe("PoolVault", function () {
     it("should revert on zero amount", async function () {
       const { vault, lp1 } = await loadFixture(deployPoolVaultFixture);
       await expect(vault.connect(lp1).deposit(POOL_PRIME, 0)).to.be.revertedWith(
-        "PoolVault: zero amount"
+        "SugarcPoolVault: zero amount"
       );
     });
 

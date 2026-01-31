@@ -13,3 +13,9 @@ export const ARC_TESTNET_CHAIN_ID = 5042002;
  * - Native balance (gas): 18 decimals of precision per Arc docs.
  */
 export const ARC_TESTNET_USDC = "0x3600000000000000000000000000000000000000" as const;
+
+/**
+ * Deployed SugarcPoolVault on Arc Testnet.
+ * Update this after redeploying; also update sugarc/deployments/arc-testnet.json.
+ */
+export const ARC_TESTNET_SUGARC_POOL_VAULT = "0x0af25C76bE552fe334BD2684DF3d64bb1E1baCF1" as const;
