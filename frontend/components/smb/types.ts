@@ -43,3 +43,33 @@ export interface SmbLockedOffer {
   input: SmbInvoiceInput;
   pricing: SmbPricingResult;
 }
+
+/** SMB dashboard stats (read from chain by wallet later; mock for now). */
+export interface SmbStats {
+  /** Total invoice face value factored so far (USDC) */
+  totalFactoredUsdc: string;
+  /** Total USDC received (cash advanced) so far */
+  totalReceivedUsdc: string;
+  /** Number of invoices currently active (not yet settled) */
+  activeInvoicesCount: number;
+  /** Number of invoices settled/paid off */
+  settledInvoicesCount: number;
+}
+
+/** Status of a factored invoice. */
+export type SmbInvoiceStatus = "active" | "settled" | "pending";
+
+/** Single factored invoice record (chain-derived later; mock for now). */
+export interface SmbInvoiceRecord {
+  id: string;
+  /** Invoice face value (USDC) */
+  amountUsdc: string;
+  /** Cash advanced / received (USDC) */
+  receivedUsdc: string;
+  status: SmbInvoiceStatus;
+  dueDate: string;
+  /** When factored (ISO date) */
+  factoredAt: string;
+  /** Pool that funded: Prime / Standard / High Yield */
+  pool: string;
+}

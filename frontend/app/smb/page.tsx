@@ -8,7 +8,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { InvoiceForm } from "@/components/smb/invoice-form";
 import { PricingPreviewCard } from "@/components/smb/pricing-preview-card";
 import { OfferConfirmation } from "@/components/smb/offer-confirmation";
+import { SmbStatsCards } from "@/components/smb/smb-stats-cards";
+import { SmbInvoiceList } from "@/components/smb/smb-invoice-list";
 import { computePricing } from "@/components/smb/pricing-logic";
+import { mockSmbStats, mockSmbInvoices } from "@/components/smb/mock-stats";
 import type { SmbInvoiceInput, SmbLockedOffer } from "@/components/smb/types";
 
 function getDefaultDueDate(): string {
@@ -84,10 +87,19 @@ export default function SMBDashboardPage() {
           <div>
             <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
               <FileStack className="h-7 w-7 text-primary" />
-              Request USDC payout
+              SMB Dashboard
             </h1>
             <p className="mt-1 text-muted-foreground">
-              Enter invoice details for a discount-driven quote. You receive USDC today; factoring fee is based on pool risk.
+              Your factoring stats and invoice history. Request USDC payout below.
+            </p>
+          </div>
+
+          <SmbStatsCards data={mockSmbStats} />
+
+          <div>
+            <h2 className="text-lg font-semibold">Request USDC payout</h2>
+            <p className="mt-0.5 text-sm text-muted-foreground">
+              Enter invoice details for a discount-driven quote.
             </p>
           </div>
 
@@ -111,6 +123,8 @@ export default function SMBDashboardPage() {
               onContinue={canContinue ? handleContinue : undefined}
             />
           </div>
+
+          <SmbInvoiceList invoices={mockSmbInvoices} />
         </div>
       </Container>
     </ProtectedRoute>
