@@ -8,7 +8,11 @@ const Card = React.forwardRef<
   <div
     ref={ref}
     className={cn(
+<<<<<<< HEAD
       "rounded-lg border border-input/40 bg-background text-foreground shadow-sm",
+=======
+      "rounded-xl border border-input bg-card text-card-foreground shadow",
+>>>>>>> circle-wallet-implementation
       className
     )}
     {...props}

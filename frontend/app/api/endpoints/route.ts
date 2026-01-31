@@ -1,4 +1,6 @@
 // app/api/endpoints/route.ts
+// Aligned with Circle "Create User Wallets with Social Login" quickstart
+// https://developers.circle.com/llms.txt
 import { NextResponse } from "next/server";
 
 const CIRCLE_BASE_URL =
@@ -45,6 +47,7 @@ export async function POST(request: Request) {
           return NextResponse.json(data, { status: response.status });
         }
 
+        // Returns: { deviceToken, deviceEncryptionKey }
         return NextResponse.json(data.data, { status: 200 });
       }
 
@@ -77,9 +80,11 @@ export async function POST(request: Request) {
         const data = await response.json();
 
         if (!response.ok) {
+          // Pass through Circle error payload (e.g. code 155106: user already initialized)
           return NextResponse.json(data, { status: response.status });
         }
 
+        // Returns: { challengeId }
         return NextResponse.json(data.data, { status: 200 });
       }
 
@@ -108,6 +113,7 @@ export async function POST(request: Request) {
           return NextResponse.json(data, { status: response.status });
         }
 
+        // Returns: { wallets: [...] }
         return NextResponse.json(data.data, { status: 200 });
       }
 
@@ -138,6 +144,7 @@ export async function POST(request: Request) {
           return NextResponse.json(data, { status: response.status });
         }
 
+        // Returns: { tokenBalances: [...] }
         return NextResponse.json(data.data, { status: 200 });
       }
 
