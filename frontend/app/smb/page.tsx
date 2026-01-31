@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { FileStack, BarChart3, FilePlus } from "lucide-react";
 import { Container } from "@/components/layout/container";
 import { ProtectedRoute } from "@/components/auth/protected-route";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Spinner } from "@/components/ui/spinner";
 import { InvoiceForm } from "@/components/smb/invoice-form";
 import { PricingPreviewCard } from "@/components/smb/pricing-preview-card";
 import { OfferConfirmation } from "@/components/smb/offer-confirmation";
@@ -13,7 +14,8 @@ import { SmbStatsCards } from "@/components/smb/smb-stats-cards";
 import { SmbInvoiceList } from "@/components/smb/smb-invoice-list";
 import { computePricing } from "@/components/smb/pricing-logic";
 import { mockSmbStats, mockSmbInvoices } from "@/components/smb/mock-stats";
-import type { SmbInvoiceInput, SmbLockedOffer } from "@/components/smb/types";
+import { useAuth } from "@/contexts/auth-context";
+import type { SmbInvoiceInput, SmbLockedOffer, SmbStats, SmbInvoiceRecord } from "@/components/smb/types";
 
 function getDefaultDueDate(): string {
   const d = new Date();
@@ -29,10 +31,45 @@ const defaultInput: SmbInvoiceInput = {
 
 type Step = "quote" | "confirm";
 
+const DEMO_INVOICES_TOP = 3;
+
 export default function SMBDashboardPage() {
+  const { wallet } = useAuth();
   const [step, setStep] = useState<Step>("quote");
   const [input, setInput] = useState<SmbInvoiceInput>(defaultInput);
   const [lockedOffer, setLockedOffer] = useState<SmbLockedOffer | null>(null);
+  const [stats, setStats] = useState<SmbStats | null>(mockSmbStats);
+  const [invoices, setInvoices] = useState<SmbInvoiceRecord[]>(mockSmbInvoices);
+  const [statsLoading, setStatsLoading] = useState(true);
+
+  const fetchStats = useCallback(async () => {
+    if (!wallet?.address) {
+      setStats(mockSmbStats);
+      setInvoices(mockSmbInvoices);
+      setStatsLoading(false);
+      return;
+    }
+    setStatsLoading(true);
+    try {
+      const res = await fetch(`/api/smb/stats?wallet=${encodeURIComponent(wallet.address)}`);
+      if (!res.ok) throw new Error("Failed to fetch stats");
+      const json = await res.json();
+      const realStats = json.stats as SmbStats;
+      const realInvoices = (json.invoices ?? []) as SmbInvoiceRecord[];
+      const hasReal = realStats && (realStats.activeInvoicesCount > 0 || realStats.settledInvoicesCount > 0 || parseFloat((realStats.totalFactoredUsdc ?? "0").replace(/,/g, "")) > 0);
+      setStats(hasReal ? realStats : mockSmbStats);
+      setInvoices(realInvoices.length > 0 ? [...mockSmbInvoices.slice(0, DEMO_INVOICES_TOP), ...realInvoices] : mockSmbInvoices);
+    } catch {
+      setStats(mockSmbStats);
+      setInvoices(mockSmbInvoices);
+    } finally {
+      setStatsLoading(false);
+    }
+  }, [wallet?.address]);
+
+  useEffect(() => {
+    void fetchStats();
+  }, [fetchStats]);
 
   const pricing = useMemo(() => computePricing(input), [input]);
   const tenorDays = useMemo(() => {
@@ -108,8 +145,16 @@ export default function SMBDashboardPage() {
             </TabsList>
 
             <TabsContent value="stats" className="space-y-8">
-              <SmbStatsCards data={mockSmbStats} />
-              <SmbInvoiceList invoices={mockSmbInvoices} />
+              {statsLoading ? (
+                <div className="flex min-h-[12rem] items-center justify-center">
+                  <Spinner size="lg" />
+                </div>
+              ) : (
+                <>
+                  <SmbStatsCards data={stats} />
+                  <SmbInvoiceList invoices={invoices} />
+                </>
+              )}
             </TabsContent>
 
             <TabsContent value="new-invoice" className="space-y-8">

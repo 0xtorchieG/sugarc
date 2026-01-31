@@ -12,6 +12,7 @@ import { AvailablePools } from "@/components/lp/available-pools";
 import { RecentPayouts } from "@/components/lp/recent-payouts";
 import { DepositModal } from "@/components/lp/deposit-modal";
 import { useAuth } from "@/contexts/auth-context";
+import { mockLpDashboardData } from "@/components/lp/mock-data";
 import type { LpDashboardData, LpPool, LpKpis, LpPoolOverview } from "@/components/lp/types";
 
 function mapApiPoolToLpPool(p: { id: string; name: string; kind: string; description: string; riskTier: string; targetApr: string; tvl: string; utilization: string; avgTenor: string; reserveProtection: string }): LpPool {
@@ -44,34 +45,33 @@ export default function LPDashboardPage() {
       if (!res.ok) throw new Error("Failed to fetch pools");
       const json = await res.json();
       const pools: LpPool[] = (json.pools ?? []).map(mapApiPoolToLpPool);
-      const kpis: LpKpis = json.kpis ?? {
-        totalDeposited: "—",
-        availableLiquidity: "—",
-        earnedFees: "—",
-      };
+      const apiKpis = json.kpis as LpKpis | undefined;
+      const kpis: LpKpis = apiKpis && (apiKpis.totalDeposited !== "—" || apiKpis.availableLiquidity !== "—")
+        ? apiKpis
+        : { ...mockLpDashboardData.kpis };
       const poolOverview: LpPoolOverview =
         pools.length > 0
           ? {
-              currentApr: "—",
+              currentApr: mockLpDashboardData.poolOverview.currentApr || "—",
               utilization:
                 Math.round(
                   pools.reduce((acc, p) => acc + (parseInt(p.utilization, 10) || 0), 0) / pools.length
                 ) + "%",
             }
-          : { currentApr: "", utilization: "" };
+          : { ...mockLpDashboardData.poolOverview };
       setData({
         kpis,
         poolOverview,
         pools,
-        recentPayouts: [],
+        recentPayouts: mockLpDashboardData.recentPayouts,
       });
     } catch (err) {
       console.error("fetchPools", err);
       setData({
-        kpis: { totalDeposited: "—", availableLiquidity: "—", earnedFees: "—" },
-        poolOverview: { currentApr: "", utilization: "" },
-        pools: [],
-        recentPayouts: [],
+        kpis: mockLpDashboardData.kpis,
+        poolOverview: mockLpDashboardData.poolOverview,
+        pools: mockLpDashboardData.pools,
+        recentPayouts: mockLpDashboardData.recentPayouts,
       });
     } finally {
       setIsLoading(false);
