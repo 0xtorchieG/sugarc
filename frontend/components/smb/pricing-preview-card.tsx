@@ -1,6 +1,7 @@
 "use client";
 
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Banknote, Percent, Layers, TrendingUp } from "lucide-react";
 import type { SmbPricingResult } from "./types";
 import { cn } from "@/lib/utils";
@@ -11,6 +12,8 @@ interface PricingPreviewCardProps {
   isEmpty: boolean;
   /** True when tenor > 90 days (rejected in MVP). */
   isRejected?: boolean;
+  /** Called when SMB clicks Continue to go to confirmation. */
+  onContinue?: () => void;
   className?: string;
 }
 
@@ -18,6 +21,7 @@ export function PricingPreviewCard({
   result,
   isEmpty,
   isRejected,
+  onContinue,
   className,
 }: PricingPreviewCardProps) {
   if (isEmpty) {
@@ -98,6 +102,13 @@ export function PricingPreviewCard({
           <span className="tabular-nums">{result.derivedAprPercent}%</span>
         </div>
       </CardContent>
+      {onContinue && (
+        <CardFooter className="pt-2">
+          <Button className="w-full" onClick={onContinue}>
+            Continue
+          </Button>
+        </CardFooter>
+      )}
     </Card>
   );
 }

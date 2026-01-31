@@ -37,3 +37,9 @@ export interface SmbPricingResult {
   /** Tenor in days (today → due date) */
   tenorDays: number;
 }
+
+/** Locked offer for confirmation: input + pricing. Terms are fixed when SMB continues to confirm. */
+export interface SmbLockedOffer {
+  input: SmbInvoiceInput;
+  pricing: SmbPricingResult;
+}
