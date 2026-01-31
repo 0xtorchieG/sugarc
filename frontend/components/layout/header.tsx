@@ -3,6 +3,13 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import {
+  ChevronDown,
+  Copy,
+  LayoutDashboard,
+  LogOut,
+  Wallet,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/auth-context";
@@ -10,11 +17,11 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Card, CardContent } from "@/components/ui/card";
 
 const navLinks = [
   { href: "/", label: "Home" },
@@ -27,62 +34,12 @@ function truncateAddress(address: string) {
   return `${address.slice(0, 6)}…${address.slice(-4)}`;
 }
 
-function CopyIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={className}
-    >
-      <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
-      <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
-    </svg>
-  );
-}
-
-function CheckIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={className}
-    >
-      <path d="M20 6 9 17l-5-5" />
-    </svg>
-  );
-}
-
 function UserPlaceholderIcon({ className }: { className?: string }) {
   return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      width="20"
-      height="20"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={className}
-    >
-      <circle cx="12" cy="8" r="4" />
-      <path d="M20 21a8 8 0 0 0-16 0" />
-    </svg>
+    <Wallet
+      className={cn("h-4 w-4 text-muted-foreground", className)}
+      aria-hidden
+    />
   );
 }
 
@@ -91,7 +48,9 @@ export function Header() {
   const { isAuthenticated, isRestoring, wallet, balance, logout } = useAuth();
   const [copied, setCopied] = useState(false);
 
-  async function copyAddress() {
+  async function copyAddress(e: React.MouseEvent | React.KeyboardEvent) {
+    e.preventDefault();
+    e.stopPropagation();
     if (!wallet?.address) return;
     try {
       await navigator.clipboard.writeText(wallet.address);
@@ -136,73 +95,123 @@ export function Header() {
                     <Button
                       variant="outline"
                       size="sm"
-                      className="flex items-center gap-2 pl-2 pr-3"
+                      className="flex min-w-0 items-center gap-2 overflow-hidden pl-2 pr-2 sm:pl-2 sm:pr-3"
+                      aria-label="Account menu"
                     >
-                      <Avatar className="h-7 w-7">
+                      <Avatar className="h-7 w-7 shrink-0">
                         <AvatarFallback className="bg-muted text-muted-foreground">
                           <UserPlaceholderIcon />
                         </AvatarFallback>
                       </Avatar>
-                      <span className="hidden font-mono text-muted-foreground sm:inline">
-                        {wallet ? truncateAddress(wallet.address) : "…"}
+                      <span className="hidden min-w-0 sm:inline-block">
+                        <span className="block text-left text-xs font-medium leading-tight text-foreground">
+                          Circle Wallet
+                        </span>
+                        <span className="block truncate text-left font-mono text-[11px] leading-tight text-muted-foreground">
+                          {wallet ? truncateAddress(wallet.address) : "…"}
+                        </span>
                       </span>
                       {balance !== null && (
-                        <span className="hidden text-muted-foreground sm:inline">
+                        <span className="hidden rounded-full bg-primary/10 px-2 py-0.5 font-mono text-xs text-primary md:inline">
                           {balance} USDC
                         </span>
                       )}
+                      <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
                     </Button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-56">
-                    <DropdownMenuLabel className="font-normal">
-                      <div className="flex flex-col gap-1">
-                        <p className="text-xs text-muted-foreground">Wallet</p>
-                        {wallet && (
-                          <div className="flex items-center gap-1.5">
-                            <p className="font-mono text-xs break-all flex-1 min-w-0">
-                              {wallet.address}
-                            </p>
+                  <DropdownMenuContent align="end" className="w-72 p-0" sideOffset={8}>
+                    {/* Identity */}
+                    <div className="flex flex-col gap-3 p-4 pb-3">
+                      <div className="flex items-center gap-3">
+                        <Avatar className="h-10 w-10 shrink-0">
+                          <AvatarFallback className="bg-muted text-muted-foreground">
+                            <UserPlaceholderIcon className="h-5 w-5" />
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-semibold text-foreground">
+                            Connected Circle Wallet
+                          </p>
+                          <div className="mt-1 flex items-center gap-2">
+                            <span className="min-w-0 truncate font-mono text-xs text-muted-foreground">
+                              {wallet ? truncateAddress(wallet.address) : "…"}
+                            </span>
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground"
-                              onClick={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                copyAddress();
+                              className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
+                              onClick={copyAddress}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" || e.key === " ") copyAddress(e);
                               }}
                               title={copied ? "Copied!" : "Copy address"}
+                              aria-label={copied ? "Copied" : "Copy address"}
                             >
                               {copied ? (
-                                <CheckIcon className="text-green-600" />
+                                <span className="text-primary" aria-hidden>
+                                  ✓
+                                </span>
                               ) : (
-                                <CopyIcon />
+                                <Copy className="h-3.5 w-3.5" aria-hidden />
                               )}
                             </Button>
                           </div>
-                        )}
-                        {balance !== null && (
-                          <p className="text-sm font-medium">USDC {balance}</p>
-                        )}
+                        </div>
                       </div>
-                    </DropdownMenuLabel>
+                    </div>
+
+                    {/* Balance */}
+                    {balance !== null && (
+                      <div className="px-4 pb-3">
+                        <Card className="border-border/80 bg-muted/30">
+                          <CardContent className="p-3">
+                            <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                              USDC balance
+                            </p>
+                            <p className="mt-1 text-xl font-semibold tabular-nums text-primary">
+                              {balance}
+                            </p>
+                            <p className="mt-0.5 text-xs text-muted-foreground">
+                              Available to deposit / fund invoices
+                            </p>
+                          </CardContent>
+                        </Card>
+                      </div>
+                    )}
+
                     <DropdownMenuSeparator />
-                    <DropdownMenuItem asChild>
-                      <Link href="/lp">Liquidity Provider</Link>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem asChild>
-                      <Link href="/smb">SMB Dashboard</Link>
-                    </DropdownMenuItem>
+
+                    {/* Quick actions */}
+                    <div className="p-1">
+                      <DropdownMenuItem asChild>
+                        <Link href="/lp" className="flex cursor-pointer items-center gap-2">
+                          <Wallet className="h-4 w-4 shrink-0" />
+                          Liquidity Provider
+                        </Link>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem asChild>
+                        <Link href="/smb" className="flex cursor-pointer items-center gap-2">
+                          <LayoutDashboard className="h-4 w-4 shrink-0" />
+                          SMB Dashboard
+                        </Link>
+                      </DropdownMenuItem>
+                    </div>
+
                     <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                      className="text-red-600 focus:text-red-600"
-                      onSelect={(e) => {
-                        e.preventDefault();
-                        logout();
-                      }}
-                    >
-                      Log out
-                    </DropdownMenuItem>
+
+                    {/* Log out */}
+                    <div className="p-1">
+                      <DropdownMenuItem
+                        className="cursor-pointer text-destructive focus:bg-destructive/10 focus:text-destructive"
+                        onSelect={(e) => {
+                          e.preventDefault();
+                          logout();
+                        }}
+                      >
+                        <LogOut className="mr-2 h-4 w-4 shrink-0" />
+                        Log out
+                      </DropdownMenuItem>
+                    </div>
                   </DropdownMenuContent>
                 </DropdownMenu>
               )}
