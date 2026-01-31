@@ -12,11 +12,6 @@ Run all commands below from this repo root (the folder that contains `package.js
 npm install
 ```
 
-### Env (per package)
-
-- **frontend**: `NEXT_PUBLIC_THIRDWEB_CLIENT_ID` (from [thirdweb dashboard](https://thirdweb.com/dashboard))
-- **contracts**: `PRIVATE_KEY`, `SEPOLIA_RPC` (for deploy)
-- **backend**: `PORT` (default 3001)
 
 ## Scripts
 
