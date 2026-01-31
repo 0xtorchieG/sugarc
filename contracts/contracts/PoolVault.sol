@@ -41,6 +41,7 @@ contract PoolVault is Ownable, ReentrancyGuard {
         address smb;
         uint256 faceAmount;
         uint256 advanceAmount;
+        uint256 repaidAmount;
         uint16 feeBps;
         uint256 dueDate;
         InvoiceStatus status;
@@ -64,10 +65,19 @@ contract PoolVault is Ownable, ReentrancyGuard {
         uint16 feeBps,
         bytes32 refHash
     );
+    event InvoiceRepaid(
+        uint256 indexed invoiceId,
+        uint8 indexed poolId,
+        address indexed payer,
+        uint256 amount,
+        bool fullyRepaid
+    );
+    event PoolLiquidityIncreased(uint8 indexed poolId, uint256 amount, uint256 newAvailableLiquidity);
 
     error InvalidPoolId();
     error TransferFailed();
     error InsufficientLiquidity();
+    error InvoiceNotFunded();
 
     constructor(address _usdc) Ownable(msg.sender) ReentrancyGuard() {
         require(_usdc != address(0), "PoolVault: zero USDC address");
@@ -169,6 +179,7 @@ contract PoolVault is Ownable, ReentrancyGuard {
             smb: smb,
             faceAmount: faceAmount,
             advanceAmount: advanceAmount,
+            repaidAmount: 0,
             feeBps: feeBps,
             dueDate: dueDate,
             status: InvoiceStatus.Funded,
@@ -184,6 +195,34 @@ contract PoolVault is Ownable, ReentrancyGuard {
     }
 
     /**
+     * @notice Repay an invoice: transfer USDC from payer into vault, update repayment state.
+     *         When repaidAmount >= faceAmount, invoice is marked Repaid and pool totalOutstanding is reduced.
+     *         LPs benefit via pool-level accounting; no per-invoice LP payout.
+     */
+    function repayInvoice(uint256 invoiceId, uint256 amount) external nonReentrant {
+        require(amount > 0, "PoolVault: zero amount");
+        Invoice storage inv = invoices[invoiceId];
+        if (inv.smb == address(0)) revert InvoiceNotFunded();
+        if (inv.status != InvoiceStatus.Funded) revert InvoiceNotFunded();
+
+        bool ok = usdc.transferFrom(msg.sender, address(this), amount);
+        if (!ok) revert TransferFailed();
+
+        inv.repaidAmount += amount;
+        bool fullyRepaid = inv.repaidAmount >= inv.faceAmount;
+        if (fullyRepaid) {
+            inv.status = InvoiceStatus.Repaid;
+            // Release the advance (what we drew from the pool) back to available liquidity
+            pools[inv.poolId].totalOutstanding -= inv.advanceAmount;
+            uint256 newAvailable =
+                pools[inv.poolId].totalDeposits - pools[inv.poolId].totalOutstanding;
+            emit PoolLiquidityIncreased(inv.poolId, inv.advanceAmount, newAvailable);
+        }
+
+        emit InvoiceRepaid(invoiceId, inv.poolId, msg.sender, amount, fullyRepaid);
+    }
+
+    /**
      * @notice Get full invoice by id.
      */
     function getInvoice(uint256 invoiceId)
@@ -194,6 +233,7 @@ contract PoolVault is Ownable, ReentrancyGuard {
             address smb,
             uint256 faceAmount,
             uint256 advanceAmount,
+            uint256 repaidAmount,
             uint16 feeBps,
             uint256 dueDate,
             InvoiceStatus status,
@@ -206,6 +246,7 @@ contract PoolVault is Ownable, ReentrancyGuard {
             inv.smb,
             inv.faceAmount,
             inv.advanceAmount,
+            inv.repaidAmount,
             inv.feeBps,
             inv.dueDate,
             inv.status,

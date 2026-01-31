@@ -299,4 +299,115 @@ describe("PoolVault", function () {
       expect(await vault.getInvoiceIdByRefHash(unknownHash)).to.equal(2n ** 256n - 1n);
     });
   });
+
+  describe("repayInvoice", function () {
+    const faceAmount = ethers.parseUnits("10000", USDC_DECIMALS);
+    const advanceAmount = ethers.parseUnits("8000", USDC_DECIMALS);
+    const feeBps = 250;
+    const dueDate = Math.floor(Date.now() / 1000) + 30 * 24 * 3600;
+    const refHash = ethers.keccak256(ethers.toUtf8Bytes("INV-REPAY"));
+
+    it("partial repayment keeps invoice Funded and does not reduce totalOutstanding", async function () {
+      const { vault, usdc, lp1, owner, smb } = await loadFixture(deployPoolVaultFixture);
+      const depositAmount = ethers.parseUnits("20000", USDC_DECIMALS);
+      await usdc.connect(lp1).approve(await vault.getAddress(), depositAmount);
+      await vault.connect(lp1).deposit(POOL_PRIME, depositAmount);
+      await vault.connect(owner).fundInvoice(
+        POOL_PRIME,
+        smb.address,
+        faceAmount,
+        advanceAmount,
+        feeBps,
+        dueDate,
+        refHash
+      );
+
+      const partialAmount = ethers.parseUnits("3000", USDC_DECIMALS);
+      await usdc.connect(smb).approve(await vault.getAddress(), partialAmount);
+      await expect(vault.connect(smb).repayInvoice(0, partialAmount))
+        .to.emit(vault, "InvoiceRepaid")
+        .withArgs(0, POOL_PRIME, smb.address, partialAmount, false);
+
+      const inv = await vault.getInvoice(0);
+      expect(inv.repaidAmount).to.equal(partialAmount);
+      expect(inv.status).to.equal(0); // Funded
+
+      const [, totalOutstanding] = await vault.getPool(POOL_PRIME);
+      expect(totalOutstanding).to.equal(advanceAmount);
+
+      const vaultBalance = await usdc.balanceOf(await vault.getAddress());
+      expect(vaultBalance).to.equal(depositAmount - advanceAmount + partialAmount);
+    });
+
+    it("full repayment marks invoice Repaid and reduces pool totalOutstanding", async function () {
+      const { vault, usdc, lp1, owner, smb } = await loadFixture(deployPoolVaultFixture);
+      const depositAmount = ethers.parseUnits("20000", USDC_DECIMALS);
+      await usdc.connect(lp1).approve(await vault.getAddress(), depositAmount);
+      await vault.connect(lp1).deposit(POOL_PRIME, depositAmount);
+      await vault.connect(owner).fundInvoice(
+        POOL_PRIME,
+        smb.address,
+        faceAmount,
+        advanceAmount,
+        feeBps,
+        dueDate,
+        refHash
+      );
+      // SMB has advanceAmount; mint extra so they can repay full faceAmount
+      const extraNeeded = faceAmount - advanceAmount;
+      await usdc.mint(smb.address, extraNeeded);
+
+      await usdc.connect(smb).approve(await vault.getAddress(), faceAmount);
+      await expect(vault.connect(smb).repayInvoice(0, faceAmount))
+        .to.emit(vault, "InvoiceRepaid")
+        .withArgs(0, POOL_PRIME, smb.address, faceAmount, true)
+        .to.emit(vault, "PoolLiquidityIncreased");
+
+      const inv = await vault.getInvoice(0);
+      expect(inv.repaidAmount).to.equal(faceAmount);
+      expect(inv.status).to.equal(1); // Repaid
+
+      const [totalDeposits, totalOutstanding, availableLiquidity] = await vault.getPool(POOL_PRIME);
+      expect(totalDeposits).to.equal(depositAmount);
+      expect(totalOutstanding).to.equal(0); // advance released on full repay
+      expect(availableLiquidity).to.equal(depositAmount);
+
+      expect(await usdc.balanceOf(await vault.getAddress())).to.equal(
+        depositAmount - advanceAmount + faceAmount
+      );
+    });
+
+    it("repayInvoice reverts when invoice not Funded", async function () {
+      const { vault, usdc, smb } = await loadFixture(deployPoolVaultFixture);
+      await usdc.connect(smb).approve(await vault.getAddress(), faceAmount);
+      await expect(vault.connect(smb).repayInvoice(999, faceAmount)).to.be.revertedWithCustomError(
+        vault,
+        "InvoiceNotFunded"
+      );
+    });
+
+    it("repayInvoice reverts when invoice already Repaid", async function () {
+      const { vault, usdc, lp1, owner, smb } = await loadFixture(deployPoolVaultFixture);
+      await usdc.connect(lp1).approve(await vault.getAddress(), advanceAmount);
+      await vault.connect(lp1).deposit(POOL_PRIME, advanceAmount);
+      await vault.connect(owner).fundInvoice(
+        POOL_PRIME,
+        smb.address,
+        faceAmount,
+        advanceAmount,
+        feeBps,
+        dueDate,
+        refHash
+      );
+      await usdc.mint(smb.address, faceAmount - advanceAmount);
+      await usdc.connect(smb).approve(await vault.getAddress(), faceAmount);
+      await vault.connect(smb).repayInvoice(0, faceAmount);
+
+      await usdc.connect(smb).approve(await vault.getAddress(), 1n);
+      await expect(vault.connect(smb).repayInvoice(0, 1n)).to.be.revertedWithCustomError(
+        vault,
+        "InvoiceNotFunded"
+      );
+    });
+  });
 });
