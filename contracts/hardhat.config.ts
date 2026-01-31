@@ -6,6 +6,11 @@ const config: HardhatUserConfig = {
   networks: {
     localhost: { url: "http://127.0.0.1:8545" },
     sepolia: { url: process.env.SEPOLIA_RPC || "", accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [] },
+    arcTestnet: {
+      url: process.env.ARC_RPC ?? "https://rpc.testnet.arc.network",
+      chainId: 5042002,
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
+    },
   },
 };
 

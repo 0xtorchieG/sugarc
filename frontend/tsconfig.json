@@ -23,9 +23,8 @@
       }
     ],
     "paths": {
-      "@/*": [
-        "./*"
-      ]
+      "@/*": ["./*"],
+      "@deployments/*": ["../deployments/*"]
     }
   },
   "include": [
