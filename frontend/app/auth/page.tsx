@@ -8,6 +8,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { setCookie, getCookie } from "cookies-next";
 import { SocialLoginProvider } from "@circle-fin/w3s-pw-web-sdk/dist/src/types";
 import type { W3SSdk } from "@circle-fin/w3s-pw-web-sdk";
@@ -24,7 +25,17 @@ type LoginResult = { userToken: string; encryptionKey: string };
 
 type Wallet = { id: string; address: string; blockchain: string; [key: string]: unknown };
 
+const ALLOWED_RETURN_TO = ["/smb", "/lp"];
+
+function isAllowedReturnTo(path: string | null): path is string {
+  if (!path || typeof path !== "string") return false;
+  return ALLOWED_RETURN_TO.includes(path);
+}
+
 export default function AuthPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const returnTo = searchParams.get("returnTo");
   const { setAuth, setWalletInfo, isAuthenticated, wallet } = useAuth();
   const sdkRef = useRef<W3SSdk | null>(null);
   const acceptingLoginRef = useRef(true);
@@ -355,7 +366,22 @@ export default function AuthPage() {
 
   const primaryWallet = wallets[0];
 
+  useEffect(() => {
+    if (isAuthenticated && wallet && isAllowedReturnTo(returnTo)) {
+      router.replace(returnTo);
+    }
+  }, [isAuthenticated, wallet, returnTo, router]);
+
   if (isAuthenticated && wallet) {
+    if (isAllowedReturnTo(returnTo)) {
+      return (
+        <Container>
+          <div className="mx-auto flex min-h-[60vh] max-w-md flex-col justify-center px-4 py-12 text-center">
+            <p className="text-muted-foreground">Redirecting you…</p>
+          </div>
+        </Container>
+      );
+    }
     return (
       <Container>
         <div className="mx-auto flex min-h-[60vh] max-w-md flex-col justify-center px-4 py-12">

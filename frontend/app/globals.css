@@ -2,21 +2,51 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Sugarc brand theme — pistachio + cream + cocoa (FE-DES-001)
+ * ----------------------------------------------------------
+ * To tweak colors: edit the HSL values below. Format is H S% L% (no "hsl()").
+ *   - Primary: pistachio green (buttons, links, focus)
+ *   - Background/Foreground: cream + cocoa (readable contrast)
+ *   - Accent: "syrup" highlight (hover/secondary surfaces)
+ *   - Muted: warm grays (subtle text, borders)
+ *   - Ring/Border: used for inputs, focus rings, card edges
+ * Contrast target: AA-ish; avoid pastel-on-pastel for body text.
+ */
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222 47% 11%;
-    --primary: 222 47% 11%;
-    --primary-foreground: 210 40% 98%;
-    --accent: 210 40% 96%;
-    --muted: 210 40% 96%;
-    --muted-foreground: 215 16% 47%;
-    --input: 214 32% 91%;
-    --card: 0 0% 100%;
-    --card-foreground: 222 47% 11%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 222 47% 11%;
+    /* Primary: pistachio green */
+    --primary: 88 38% 48%;
+    --primary-foreground: 0 0% 100%;
+
+    /* Page & surfaces: cream / off-white */
+    --background: 45 28% 97%;
+    --foreground: 28 22% 18%;
+
+    /* Cards, popovers */
+    --card: 45 25% 99%;
+    --card-foreground: 28 22% 18%;
+    --popover: 45 25% 99%;
+    --popover-foreground: 28 22% 18%;
+
+    /* Accent: syrup (soft caramel) — hover, secondary */
+    --accent: 35 40% 92%;
+    --accent-foreground: 28 22% 18%;
+
+    /* Muted: warm grays */
+    --muted: 40 22% 93%;
+    --muted-foreground: 28 12% 42%;
+
+    /* Borders, inputs */
+    --input: 38 20% 88%;
+    --border: 38 18% 86%;
+    --ring: 88 38% 48%;
+
+    /* Destructive (errors, remove) — keep for compatibility */
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 98%;
   }
+
   body {
     @apply bg-background text-foreground antialiased;
   }
