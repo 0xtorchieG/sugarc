@@ -10,7 +10,7 @@ describe("PoolVault", function () {
   const USDC_DECIMALS = 6;
 
   async function deployPoolVaultFixture() {
-    const [owner, lp1, lp2] = await ethers.getSigners();
+    const [owner, lp1, lp2, smb] = await ethers.getSigners();
 
     const MintableERC20Factory = await ethers.getContractFactory("MintableERC20");
     const usdc = (await MintableERC20Factory.deploy("USD Coin", "USDC", USDC_DECIMALS)) as unknown as MintableERC20;
@@ -24,7 +24,7 @@ describe("PoolVault", function () {
     const vault = (await PoolVaultFactory.deploy(await usdc.getAddress())) as unknown as PoolVault;
     await vault.waitForDeployment();
 
-    return { vault, usdc, owner, lp1, lp2 };
+    return { vault, usdc, owner, lp1, lp2, smb };
   }
 
   describe("deployment", function () {
@@ -200,6 +200,103 @@ describe("PoolVault", function () {
       await expect(
         vault.connect(lp1).setTotalOutstanding(POOL_PRIME, 1000)
       ).to.be.revertedWithCustomError(vault, "OwnableUnauthorizedAccount");
+    });
+  });
+
+  describe("fundInvoice", function () {
+    const faceAmount = ethers.parseUnits("10000", USDC_DECIMALS);
+    const advanceAmount = ethers.parseUnits("8000", USDC_DECIMALS);
+    const feeBps = 250; // 2.5%
+    const dueDate = Math.floor(Date.now() / 1000) + 30 * 24 * 3600; // 30 days
+    const refHash = ethers.keccak256(ethers.toUtf8Bytes("INV-001"));
+
+    it("should fund invoice: transfer USDC to SMB, store invoice, update pool accounting", async function () {
+      const { vault, usdc, lp1, owner, smb } = await loadFixture(deployPoolVaultFixture);
+      const depositAmount = ethers.parseUnits("20000", USDC_DECIMALS);
+      await usdc.connect(lp1).approve(await vault.getAddress(), depositAmount);
+      await vault.connect(lp1).deposit(POOL_PRIME, depositAmount);
+
+      const smbBalanceBefore = await usdc.balanceOf(smb.address);
+      const vaultBalanceBefore = await usdc.balanceOf(await vault.getAddress());
+
+      await expect(
+        vault.connect(owner).fundInvoice(
+          POOL_PRIME,
+          smb.address,
+          faceAmount,
+          advanceAmount,
+          feeBps,
+          dueDate,
+          refHash
+        )
+      )
+        .to.emit(vault, "InvoiceFunded")
+        .withArgs(0, POOL_PRIME, smb.address, advanceAmount, faceAmount, dueDate, feeBps, refHash);
+
+      expect(await usdc.balanceOf(smb.address)).to.equal(smbBalanceBefore + advanceAmount);
+      expect(await usdc.balanceOf(await vault.getAddress())).to.equal(vaultBalanceBefore - advanceAmount);
+
+      const [totalDeposits, totalOutstanding, availableLiquidity] = await vault.getPool(POOL_PRIME);
+      expect(totalDeposits).to.equal(depositAmount);
+      expect(totalOutstanding).to.equal(advanceAmount);
+      expect(availableLiquidity).to.equal(depositAmount - advanceAmount);
+
+      const inv = await vault.getInvoice(0);
+      expect(inv.poolId).to.equal(POOL_PRIME);
+      expect(inv.smb).to.equal(smb.address);
+      expect(inv.faceAmount).to.equal(faceAmount);
+      expect(inv.advanceAmount).to.equal(advanceAmount);
+      expect(inv.feeBps).to.equal(feeBps);
+      expect(inv.dueDate).to.equal(dueDate);
+      expect(inv.status).to.equal(0); // Funded
+      expect(inv.refHash).to.equal(refHash);
+
+      expect(await vault.getInvoiceIdByRefHash(refHash)).to.equal(0);
+      expect(await vault.nextInvoiceId()).to.equal(1);
+    });
+
+    it("should revert when available liquidity < advanceAmount", async function () {
+      const { vault, usdc, lp1, owner, smb } = await loadFixture(deployPoolVaultFixture);
+      const depositAmount = ethers.parseUnits("5000", USDC_DECIMALS);
+      await usdc.connect(lp1).approve(await vault.getAddress(), depositAmount);
+      await vault.connect(lp1).deposit(POOL_STANDARD, depositAmount);
+
+      const advanceMoreThanLiquidity = ethers.parseUnits("6000", USDC_DECIMALS);
+      await expect(
+        vault.connect(owner).fundInvoice(
+          POOL_STANDARD,
+          smb.address,
+          faceAmount,
+          advanceMoreThanLiquidity,
+          feeBps,
+          dueDate,
+          refHash
+        )
+      ).to.be.revertedWithCustomError(vault, "InsufficientLiquidity");
+    });
+
+    it("should revert when non-owner calls fundInvoice", async function () {
+      const { vault, usdc, lp1, smb } = await loadFixture(deployPoolVaultFixture);
+      await usdc.connect(lp1).approve(await vault.getAddress(), advanceAmount);
+      await vault.connect(lp1).deposit(POOL_PRIME, advanceAmount);
+
+      await expect(
+        vault.connect(lp1).fundInvoice(
+          POOL_PRIME,
+          smb.address,
+          faceAmount,
+          advanceAmount,
+          feeBps,
+          dueDate,
+          refHash
+        )
+      ).to.be.revertedWithCustomError(vault, "OwnableUnauthorizedAccount");
+    });
+
+    it("getInvoiceIdByRefHash returns type(uint256).max when not found", async function () {
+      const { vault } = await loadFixture(deployPoolVaultFixture);
+      const unknownHash = ethers.keccak256(ethers.toUtf8Bytes("unknown"));
+      expect(await vault.getInvoiceIdByRefHash(unknownHash)).to.equal(2n ** 256n - 1n);
     });
   });
 });

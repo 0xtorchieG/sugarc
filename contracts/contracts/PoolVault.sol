@@ -28,10 +28,46 @@ contract PoolVault is Ownable, ReentrancyGuard {
     /// @notice lp => poolId => amount
     mapping(address => mapping(uint8 => uint256)) public userDeposits;
 
+    /// @notice Invoice status for registry
+    enum InvoiceStatus {
+        Funded,
+        Repaid
+    }
+
+    /// @notice Onchain invoice record (funded from a pool)
+    struct Invoice {
+        uint256 invoiceId;
+        uint8 poolId;
+        address smb;
+        uint256 faceAmount;
+        uint256 advanceAmount;
+        uint16 feeBps;
+        uint256 dueDate;
+        InvoiceStatus status;
+        bytes32 refHash;
+    }
+
+    /// @notice invoiceId => Invoice
+    mapping(uint256 => Invoice) public invoices;
+    uint256 public nextInvoiceId;
+    /// @notice refHash (offchain invoice record hash) => invoiceId + 1 (0 = not found)
+    mapping(bytes32 => uint256) private _refHashToInvoiceId;
+
     event LiquidityAdded(address indexed lp, uint8 indexed poolId, uint256 amount);
+    event InvoiceFunded(
+        uint256 indexed invoiceId,
+        uint8 indexed poolId,
+        address indexed smb,
+        uint256 advanceAmount,
+        uint256 faceAmount,
+        uint256 dueDate,
+        uint16 feeBps,
+        bytes32 refHash
+    );
 
     error InvalidPoolId();
     error TransferFailed();
+    error InsufficientLiquidity();
 
     constructor(address _usdc) Ownable(msg.sender) ReentrancyGuard() {
         require(_usdc != address(0), "PoolVault: zero USDC address");
@@ -93,5 +129,95 @@ contract PoolVault is Ownable, ReentrancyGuard {
         if (poolId >= NUM_POOLS) revert InvalidPoolId();
         require(value <= pools[poolId].totalDeposits, "PoolVault: outstanding > deposits");
         pools[poolId].totalOutstanding = value;
+    }
+
+    /**
+     * @notice Fund an SMB invoice from a pool: transfer USDC to SMB, record invoice onchain.
+     *         Admin-only for MVP (underwriting offchain).
+     * @param poolId Pool to draw from (0 = Prime, 1 = Standard, 2 = HighYield)
+     * @param smb SMB wallet to receive advanceAmount
+     * @param faceAmount Invoice face value (USDC 6 decimals)
+     * @param advanceAmount Amount to advance to SMB (USDC 6 decimals)
+     * @param feeBps Fee in basis points
+     * @param dueDate Invoice due date (timestamp)
+     * @param refHash Hash of offchain invoice record
+     */
+    function fundInvoice(
+        uint8 poolId,
+        address smb,
+        uint256 faceAmount,
+        uint256 advanceAmount,
+        uint16 feeBps,
+        uint256 dueDate,
+        bytes32 refHash
+    ) external onlyOwner nonReentrant {
+        if (poolId >= NUM_POOLS) revert InvalidPoolId();
+        require(smb != address(0), "PoolVault: zero SMB");
+        require(advanceAmount > 0, "PoolVault: zero advance");
+
+        PoolInfo storage p = pools[poolId];
+        uint256 available = p.totalDeposits > p.totalOutstanding
+            ? p.totalDeposits - p.totalOutstanding
+            : 0;
+        if (available < advanceAmount) revert InsufficientLiquidity();
+
+        uint256 invoiceId = nextInvoiceId++;
+        _refHashToInvoiceId[refHash] = invoiceId + 1;
+        invoices[invoiceId] = Invoice({
+            invoiceId: invoiceId,
+            poolId: poolId,
+            smb: smb,
+            faceAmount: faceAmount,
+            advanceAmount: advanceAmount,
+            feeBps: feeBps,
+            dueDate: dueDate,
+            status: InvoiceStatus.Funded,
+            refHash: refHash
+        });
+
+        p.totalOutstanding += advanceAmount;
+
+        bool ok = usdc.transfer(smb, advanceAmount);
+        if (!ok) revert TransferFailed();
+
+        emit InvoiceFunded(invoiceId, poolId, smb, advanceAmount, faceAmount, dueDate, feeBps, refHash);
+    }
+
+    /**
+     * @notice Get full invoice by id.
+     */
+    function getInvoice(uint256 invoiceId)
+        external
+        view
+        returns (
+            uint8 poolId,
+            address smb,
+            uint256 faceAmount,
+            uint256 advanceAmount,
+            uint16 feeBps,
+            uint256 dueDate,
+            InvoiceStatus status,
+            bytes32 refHash
+        )
+    {
+        Invoice storage inv = invoices[invoiceId];
+        return (
+            inv.poolId,
+            inv.smb,
+            inv.faceAmount,
+            inv.advanceAmount,
+            inv.feeBps,
+            inv.dueDate,
+            inv.status,
+            inv.refHash
+        );
+    }
+
+    /**
+     * @notice Get invoiceId by refHash. Returns type(uint256).max if not found.
+     */
+    function getInvoiceIdByRefHash(bytes32 refHash) external view returns (uint256) {
+        uint256 stored = _refHashToInvoiceId[refHash];
+        return stored == 0 ? type(uint256).max : stored - 1;
     }
 }
