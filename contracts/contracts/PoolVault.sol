@@ -2,6 +2,7 @@
 pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
@@ -12,6 +13,8 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
  *         Pool IDs: 0 = Prime, 1 = Standard, 2 = HighYield.
  */
 contract PoolVault is Ownable, ReentrancyGuard {
+    using SafeERC20 for IERC20;
+
     /// @notice Number of static pools (0 = Prime, 1 = Standard, 2 = HighYield)
     uint8 public constant NUM_POOLS = 3;
 
@@ -21,6 +24,9 @@ contract PoolVault is Ownable, ReentrancyGuard {
     }
 
     IERC20 public immutable usdc;
+
+    /// @notice Operator address for backend / Circle Mint settlement automation
+    address public operator;
 
     /// @notice poolId => PoolInfo
     mapping(uint8 => PoolInfo) public pools;
@@ -69,19 +75,39 @@ contract PoolVault is Ownable, ReentrancyGuard {
         uint256 indexed invoiceId,
         uint8 indexed poolId,
         address indexed payer,
-        uint256 amount,
-        bool fullyRepaid
+        uint256 amountApplied,
+        bool fullyRepaid,
+        uint256 amountExcess
     );
     event PoolLiquidityIncreased(uint8 indexed poolId, uint256 amount, uint256 newAvailableLiquidity);
+    event OperatorUpdated(address indexed oldOperator, address indexed newOperator);
 
     error InvalidPoolId();
-    error TransferFailed();
+    error NotOwnerOrOperator();
     error InsufficientLiquidity();
     error InvoiceNotFunded();
+    error DuplicateRefHash();
+    error InvalidFaceAmount();
+    error FeeBpsTooHigh();
+    error DueDateNotFuture();
+
+    modifier onlyOwnerOrOperator() {
+        if (msg.sender != owner() && msg.sender != operator) revert NotOwnerOrOperator();
+        _;
+    }
 
     constructor(address _usdc) Ownable(msg.sender) ReentrancyGuard() {
         require(_usdc != address(0), "PoolVault: zero USDC address");
         usdc = IERC20(_usdc);
+    }
+
+    /**
+     * @notice Set the operator address (backend / Circle Mint settlement bot). Only owner.
+     */
+    function setOperator(address newOperator) external onlyOwner {
+        address old = operator;
+        operator = newOperator;
+        emit OperatorUpdated(old, newOperator);
     }
 
     /**
@@ -93,8 +119,7 @@ contract PoolVault is Ownable, ReentrancyGuard {
         if (poolId >= NUM_POOLS) revert InvalidPoolId();
         require(amount > 0, "PoolVault: zero amount");
 
-        bool ok = usdc.transferFrom(msg.sender, address(this), amount);
-        if (!ok) revert TransferFailed();
+        usdc.safeTransferFrom(msg.sender, address(this), amount);
 
         userDeposits[msg.sender][poolId] += amount;
         pools[poolId].totalDeposits += amount;
@@ -132,16 +157,6 @@ contract PoolVault is Ownable, ReentrancyGuard {
     }
 
     /**
-     * @notice Set totalOutstanding for a pool (admin / future invoice contract).
-     *         Used when invoices draw from or repay to the pool.
-     */
-    function setTotalOutstanding(uint8 poolId, uint256 value) external onlyOwner nonReentrant {
-        if (poolId >= NUM_POOLS) revert InvalidPoolId();
-        require(value <= pools[poolId].totalDeposits, "PoolVault: outstanding > deposits");
-        pools[poolId].totalOutstanding = value;
-    }
-
-    /**
      * @notice Fund an SMB invoice from a pool: transfer USDC to SMB, record invoice onchain.
      *         Admin-only for MVP (underwriting offchain).
      * @param poolId Pool to draw from (0 = Prime, 1 = Standard, 2 = HighYield)
@@ -160,10 +175,14 @@ contract PoolVault is Ownable, ReentrancyGuard {
         uint16 feeBps,
         uint256 dueDate,
         bytes32 refHash
-    ) external onlyOwner nonReentrant {
+    ) external onlyOwnerOrOperator nonReentrant {
         if (poolId >= NUM_POOLS) revert InvalidPoolId();
         require(smb != address(0), "PoolVault: zero SMB");
         require(advanceAmount > 0, "PoolVault: zero advance");
+        if (_refHashToInvoiceId[refHash] != 0) revert DuplicateRefHash();
+        if (faceAmount < advanceAmount) revert InvalidFaceAmount();
+        if (feeBps > 10_000) revert FeeBpsTooHigh();
+        if (dueDate <= block.timestamp) revert DueDateNotFuture();
 
         PoolInfo storage p = pools[poolId];
         uint256 available = p.totalDeposits > p.totalOutstanding
@@ -188,16 +207,18 @@ contract PoolVault is Ownable, ReentrancyGuard {
 
         p.totalOutstanding += advanceAmount;
 
-        bool ok = usdc.transfer(smb, advanceAmount);
-        if (!ok) revert TransferFailed();
+        usdc.safeTransfer(smb, advanceAmount);
 
         emit InvoiceFunded(invoiceId, poolId, smb, advanceAmount, faceAmount, dueDate, feeBps, refHash);
     }
 
     /**
      * @notice Repay an invoice: transfer USDC from payer into vault, update repayment state.
-     *         When repaidAmount >= faceAmount, invoice is marked Repaid and pool totalOutstanding is reduced.
+     *         Repayment is capped at remaining face (remaining = faceAmount - repaidAmount).
+     *         Only amountToApply = min(amount, remaining) is pulled; excess is not transferred.
+     *         When repaidAmount reaches faceAmount, invoice is marked Repaid and pool totalOutstanding is reduced.
      *         LPs benefit via pool-level accounting; no per-invoice LP payout.
+     * @param amount Max amount to repay; only up to remaining face is actually transferred.
      */
     function repayInvoice(uint256 invoiceId, uint256 amount) external nonReentrant {
         require(amount > 0, "PoolVault: zero amount");
@@ -205,10 +226,15 @@ contract PoolVault is Ownable, ReentrancyGuard {
         if (inv.smb == address(0)) revert InvoiceNotFunded();
         if (inv.status != InvoiceStatus.Funded) revert InvoiceNotFunded();
 
-        bool ok = usdc.transferFrom(msg.sender, address(this), amount);
-        if (!ok) revert TransferFailed();
+        uint256 remaining = inv.faceAmount - inv.repaidAmount;
+        if (remaining == 0) revert InvoiceNotFunded(); // already fully repaid
 
-        inv.repaidAmount += amount;
+        uint256 amountToApply = amount > remaining ? remaining : amount;
+        uint256 amountExcess = amount - amountToApply;
+
+        usdc.safeTransferFrom(msg.sender, address(this), amountToApply);
+
+        inv.repaidAmount += amountToApply;
         bool fullyRepaid = inv.repaidAmount >= inv.faceAmount;
         if (fullyRepaid) {
             inv.status = InvoiceStatus.Repaid;
@@ -219,7 +245,7 @@ contract PoolVault is Ownable, ReentrancyGuard {
             emit PoolLiquidityIncreased(inv.poolId, inv.advanceAmount, newAvailable);
         }
 
-        emit InvoiceRepaid(invoiceId, inv.poolId, msg.sender, amount, fullyRepaid);
+        emit InvoiceRepaid(invoiceId, inv.poolId, msg.sender, amountToApply, fullyRepaid, amountExcess);
     }
 
     /**
