@@ -13,6 +13,10 @@ export interface InvoiceIntentRecord {
   refHash: string;
   status: InvoiceIntentStatus;
   smbAddress: string;
+  /** Set when funded onchain */
+  txHash?: string;
+  /** Set when funded onchain */
+  onchainInvoiceId?: string;
   input: {
     amountUsdc: number;
     dueDate: string;
@@ -85,4 +89,21 @@ export async function findIntentsByWallet(smbAddress: string): Promise<InvoiceIn
 export async function existsByRefHash(refHash: string): Promise<boolean> {
   const intents = await readIntents();
   return intents.some((i) => i.refHash === refHash);
+}
+
+export async function updateIntentFunded(
+  intentId: string,
+  txHash: string,
+  onchainInvoiceId: string
+): Promise<void> {
+  const intents = await readIntents();
+  const idx = intents.findIndex((i) => i.intentId === intentId);
+  if (idx < 0) return;
+  intents[idx] = {
+    ...intents[idx],
+    status: "funded",
+    txHash,
+    onchainInvoiceId,
+  };
+  await writeIntents(intents);
 }
