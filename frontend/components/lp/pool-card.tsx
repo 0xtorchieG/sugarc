@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils";
 
 interface PoolCardProps {
   pool: LpPool;
-  onAddLiquidity?: (poolId: string) => void;
+  onAddLiquidity?: (pool: LpPool) => void;
   className?: string;
 }
 
@@ -105,7 +105,7 @@ export function PoolCard({ pool, onAddLiquidity, className }: PoolCardProps) {
       <CardFooter className="pt-2">
         <Button
           className="w-full"
-          onClick={() => onAddLiquidity?.(pool.id)}
+          onClick={() => onAddLiquidity?.(pool)}
           aria-label={`Add USDC to ${pool.name}`}
         >
           Add USDC

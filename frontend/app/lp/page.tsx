@@ -10,19 +10,19 @@ import { KpiCards } from "@/components/lp/kpi-cards";
 import { PoolOverview } from "@/components/lp/pool-overview";
 import { AvailablePools } from "@/components/lp/available-pools";
 import { RecentPayouts } from "@/components/lp/recent-payouts";
+import { DepositModal } from "@/components/lp/deposit-modal";
 import { mockLpDashboardData } from "@/components/lp/mock-data";
-import type { LpDashboardData } from "@/components/lp/types";
+import type { LpDashboardData, LpPool } from "@/components/lp/types";
 
 export default function LPDashboardPage() {
   // Read-only v1: use mock data. Replace with API call when wiring backend.
   const data: LpDashboardData = mockLpDashboardData;
   // Optional loading state for when API is wired; set to true to test loading UI.
   const [isLoading] = useState(false);
+  const [depositPool, setDepositPool] = useState<LpPool | null>(null);
 
-  // Placeholder for future: open deposit modal / navigate to deposit flow.
-  function handleAddLiquidity(poolId: string) {
-    // TODO: trigger transaction flow (modal, sign, etc.)
-    console.log("Add liquidity to pool:", poolId);
+  function handleAddLiquidity(pool: LpPool) {
+    setDepositPool(pool);
   }
 
   if (isLoading) {
@@ -78,6 +78,13 @@ export default function LPDashboardPage() {
             </TabsContent>
           </Tabs>
         </div>
+        {depositPool && (
+          <DepositModal
+            pool={depositPool}
+            onClose={() => setDepositPool(null)}
+            onSuccess={() => setDepositPool(null)}
+          />
+        )}
       </Container>
     </ProtectedRoute>
   );
