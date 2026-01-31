@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Droplets, BarChart3, Layers } from "lucide-react";
 import { Container } from "@/components/layout/container";
 import { ProtectedRoute } from "@/components/auth/protected-route";
@@ -10,19 +10,86 @@ import { KpiCards } from "@/components/lp/kpi-cards";
 import { PoolOverview } from "@/components/lp/pool-overview";
 import { AvailablePools } from "@/components/lp/available-pools";
 import { RecentPayouts } from "@/components/lp/recent-payouts";
+import { DepositModal } from "@/components/lp/deposit-modal";
+import { useAuth } from "@/contexts/auth-context";
 import { mockLpDashboardData } from "@/components/lp/mock-data";
-import type { LpDashboardData } from "@/components/lp/types";
+import type { LpDashboardData, LpPool, LpKpis, LpPoolOverview } from "@/components/lp/types";
+
+function mapApiPoolToLpPool(p: { id: string; name: string; kind: string; description: string; riskTier: string; targetApr: string; tvl: string; utilization: string; avgTenor: string; reserveProtection: string }): LpPool {
+  return {
+    id: p.id,
+    name: p.name,
+    kind: p.kind as LpPool["kind"],
+    description: p.description,
+    riskTier: p.riskTier as LpPool["riskTier"],
+    targetApr: p.targetApr,
+    tvl: p.tvl,
+    utilization: p.utilization,
+    avgTenor: p.avgTenor,
+    reserveProtection: p.reserveProtection,
+  };
+}
 
 export default function LPDashboardPage() {
-  // Read-only v1: use mock data. Replace with API call when wiring backend.
-  const data: LpDashboardData = mockLpDashboardData;
-  // Optional loading state for when API is wired; set to true to test loading UI.
-  const [isLoading] = useState(false);
+  const { wallet, refreshWallet } = useAuth();
+  const [data, setData] = useState<LpDashboardData | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [depositPool, setDepositPool] = useState<LpPool | null>(null);
 
-  // Placeholder for future: open deposit modal / navigate to deposit flow.
-  function handleAddLiquidity(poolId: string) {
-    // TODO: trigger transaction flow (modal, sign, etc.)
-    console.log("Add liquidity to pool:", poolId);
+  const fetchPools = useCallback(async () => {
+    try {
+      const url = wallet?.address
+        ? `/api/lp/pools?wallet=${encodeURIComponent(wallet.address)}`
+        : "/api/lp/pools";
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("Failed to fetch pools");
+      const json = await res.json();
+      const pools: LpPool[] = (json.pools ?? []).map(mapApiPoolToLpPool);
+      const apiKpis = json.kpis as LpKpis | undefined;
+      const kpis: LpKpis = apiKpis && (apiKpis.totalDeposited !== "—" || apiKpis.availableLiquidity !== "—")
+        ? apiKpis
+        : { ...mockLpDashboardData.kpis };
+      const poolOverview: LpPoolOverview =
+        pools.length > 0
+          ? {
+              currentApr: mockLpDashboardData.poolOverview.currentApr || "—",
+              utilization:
+                Math.round(
+                  pools.reduce((acc, p) => acc + (parseInt(p.utilization, 10) || 0), 0) / pools.length
+                ) + "%",
+            }
+          : { ...mockLpDashboardData.poolOverview };
+      setData({
+        kpis,
+        poolOverview,
+        pools,
+        recentPayouts: mockLpDashboardData.recentPayouts,
+      });
+    } catch (err) {
+      console.error("fetchPools", err);
+      setData({
+        kpis: mockLpDashboardData.kpis,
+        poolOverview: mockLpDashboardData.poolOverview,
+        pools: mockLpDashboardData.pools,
+        recentPayouts: mockLpDashboardData.recentPayouts,
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  }, [wallet?.address]);
+
+  useEffect(() => {
+    void fetchPools();
+  }, [fetchPools]);
+
+  function handleAddLiquidity(pool: LpPool) {
+    setDepositPool(pool);
+  }
+
+  async function handleDepositSuccess() {
+    await refreshWallet();
+    await fetchPools();
+    setDepositPool(null);
   }
 
   if (isLoading) {
@@ -65,19 +132,26 @@ export default function LPDashboardPage() {
             </TabsList>
 
             <TabsContent value="stats" className="space-y-8">
-              <KpiCards data={data.kpis} />
-              <PoolOverview data={data.poolOverview} />
-              <RecentPayouts payouts={data.recentPayouts} />
+              <KpiCards data={data!.kpis} />
+              <PoolOverview data={data!.poolOverview} />
+              <RecentPayouts payouts={data!.recentPayouts} />
             </TabsContent>
 
             <TabsContent value="pools" className="space-y-8">
               <AvailablePools
-                pools={data.pools}
+                pools={data!.pools}
                 onAddLiquidity={handleAddLiquidity}
               />
             </TabsContent>
           </Tabs>
         </div>
+        {depositPool && (
+          <DepositModal
+            pool={depositPool}
+            onClose={() => setDepositPool(null)}
+            onSuccess={handleDepositSuccess}
+          />
+        )}
       </Container>
     </ProtectedRoute>
   );

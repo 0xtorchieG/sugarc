@@ -13,6 +13,7 @@ import {
   TrendingUp,
   CheckCircle2,
 } from "lucide-react";
+import { useAuth } from "@/contexts/auth-context";
 import type { SmbLockedOffer } from "./types";
 import type { PoolKind } from "@/components/lp/types";
 import { cn } from "@/lib/utils";
@@ -35,7 +36,7 @@ const POOL_RISK: Record<PoolKind, { label: string; className: string }> = {
 interface OfferConfirmationProps {
   offer: SmbLockedOffer;
   onBack: () => void;
-  onSuccess?: (invoiceId: string) => void;
+  onSuccess?: (intentId: string) => void;
   className?: string;
 }
 
@@ -45,9 +46,13 @@ export function OfferConfirmation({
   onSuccess,
   className,
 }: OfferConfirmationProps) {
-  const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
-  const [invoiceId, setInvoiceId] = useState<string | null>(null);
+  const [status, setStatus] = useState<"idle" | "loading" | "funding" | "success" | "error">("idle");
+  const [intentId, setIntentId] = useState<string | null>(null);
+  const [refHash, setRefHash] = useState<string | null>(null);
+  const [txHash, setTxHash] = useState<string | null>(null);
+  const [onchainInvoiceId, setOnchainInvoiceId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const { wallet } = useAuth();
 
   const { input, pricing } = offer;
   const risk = POOL_RISK[pricing.eligiblePool];
@@ -63,10 +68,15 @@ export function OfferConfirmation({
     setStatus("loading");
     setErrorMessage(null);
     try {
+      const body = {
+        input: offer.input,
+        pricing: offer.pricing,
+        ...(wallet?.address && { smbAddress: wallet.address }),
+      };
       const res = await fetch("/api/smb/invoice-intent", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(offer),
+        body: JSON.stringify(body),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -74,32 +84,80 @@ export function OfferConfirmation({
         setStatus("error");
         return;
       }
-      const id = data.invoiceId as string;
-      setInvoiceId(id);
-      setStatus("success");
+      const id = data.intentId as string;
+      setIntentId(id);
+      setRefHash(data.refHash ?? null);
       onSuccess?.(id);
+
+      if (!wallet?.address) {
+        setStatus("success");
+        return;
+      }
+
+      setStatus("funding");
+      const fundRes = await fetch(`/api/invoices/${id}/fund`, { method: "POST" });
+      const fundData = await fundRes.json();
+      if (!fundRes.ok) {
+        setErrorMessage(
+          `Intent created. Funding failed: ${fundData.error ?? fundData.details ?? "Unknown error"}`
+        );
+        setStatus("success");
+        return;
+      }
+      setTxHash(fundData.txHash ?? null);
+      setOnchainInvoiceId(fundData.onchainInvoiceId ?? null);
+      setStatus("success");
     } catch {
       setErrorMessage("Network error");
       setStatus("error");
     }
   }
 
-  if (status === "success" && invoiceId) {
+  if (status === "success" && intentId) {
     return (
       <Card className={cn("border-emerald-500/30", className)}>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-emerald-700 dark:text-emerald-400">
             <CheckCircle2 className="h-6 w-6" />
-            Offer accepted
+            {txHash ? "Funded onchain" : "Offer accepted"}
           </CardTitle>
           <p className="text-sm text-muted-foreground">
-            Invoice intent created. You will receive USDC after funding is confirmed.
+            {txHash
+              ? "USDC has been sent to your wallet. Invoice is now active onchain."
+              : "Invoice intent created. You will receive USDC after funding is confirmed."}
           </p>
         </CardHeader>
         <CardContent className="space-y-2">
           <p className="text-sm font-medium">
-            Invoice ID: <span className="font-mono text-primary">{invoiceId}</span>
+            Intent ID: <span className="font-mono text-primary">{intentId}</span>
           </p>
+          {onchainInvoiceId != null && (
+            <p className="text-sm font-medium">
+              Onchain invoice: <span className="font-mono text-primary">{onchainInvoiceId}</span>
+            </p>
+          )}
+          {txHash && (
+            <p className="text-xs text-muted-foreground font-mono break-all">
+              <a
+                href={`https://testnet.arcscan.app/tx/${txHash}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-primary hover:underline"
+              >
+                View tx: {txHash.slice(0, 10)}…
+              </a>
+            </p>
+          )}
+          {refHash && !txHash && (
+            <p className="text-xs text-muted-foreground font-mono break-all">
+              refHash: {refHash}
+            </p>
+          )}
+          {errorMessage && (
+            <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+              {errorMessage}
+            </p>
+          )}
           <Button variant="outline" onClick={onBack} className="mt-4">
             Create another request
           </Button>
@@ -214,15 +272,19 @@ export function OfferConfirmation({
         )}
 
         <div className="flex gap-3 pt-2">
-          <Button variant="outline" onClick={onBack} disabled={status === "loading"} className="flex-1">
+          <Button variant="outline" onClick={onBack} disabled={status === "loading" || status === "funding"} className="flex-1">
             Back
           </Button>
           <Button
             className="flex-1"
             onClick={handleAccept}
-            disabled={status === "loading"}
+            disabled={status === "loading" || status === "funding"}
           >
-            {status === "loading" ? "Submitting…" : "Accept offer & receive USDC"}
+            {status === "loading"
+              ? "Creating intent…"
+              : status === "funding"
+                ? "Funding onchain…"
+                : "Accept offer & receive USDC"}
           </Button>
         </div>
       </CardContent>

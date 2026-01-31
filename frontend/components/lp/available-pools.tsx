@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils";
 
 interface AvailablePoolsProps {
   pools: LpPool[] | null;
-  onAddLiquidity?: (poolId: string) => void;
+  onAddLiquidity?: (pool: LpPool) => void;
   className?: string;
 }
 
