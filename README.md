@@ -23,7 +23,7 @@ npm install
 | `npm run build` | Build all packages |
 | `npm run deploy` | Deploy contracts (default: localhost) |
 | `npm run deploy:contracts` | Same as above |
-| `npm run deploy:sepolia` | Deploy to Sepolia (from `contracts/`) |
+| `npm run deploy:arc` | Deploy to Arc (from `contracts/`) |
 
 ## Deploy flow
 
