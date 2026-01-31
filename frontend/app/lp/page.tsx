@@ -1,10 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { Droplets } from "lucide-react";
+import { Droplets, BarChart3, Layers } from "lucide-react";
 import { Container } from "@/components/layout/container";
 import { ProtectedRoute } from "@/components/auth/protected-route";
 import { Spinner } from "@/components/ui/spinner";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { KpiCards } from "@/components/lp/kpi-cards";
 import { PoolOverview } from "@/components/lp/pool-overview";
 import { AvailablePools } from "@/components/lp/available-pools";
@@ -40,27 +41,42 @@ export default function LPDashboardPage() {
   return (
     <ProtectedRoute>
       <Container>
-        <div className="space-y-8">
+        <div className="space-y-6">
           <div>
             <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
               <Droplets className="h-7 w-7 text-primary" />
               Liquidity Provider Dashboard
             </h1>
             <p className="mt-1 text-muted-foreground">
-              Your supplied liquidity, yield, and activity.
+              Your supplied liquidity, yield, and activity. Add USDC to pools below.
             </p>
           </div>
 
-          <KpiCards data={data.kpis} />
+          <Tabs defaultValue="pools" className="w-full">
+            <TabsList className="grid w-full max-w-md grid-cols-2">
+              <TabsTrigger value="stats" className="flex items-center gap-2">
+                <BarChart3 className="h-4 w-4" />
+                Stats
+              </TabsTrigger>
+              <TabsTrigger value="pools" className="flex items-center gap-2">
+                <Layers className="h-4 w-4" />
+                Pools
+              </TabsTrigger>
+            </TabsList>
 
-          <AvailablePools
-            pools={data.pools}
-            onAddLiquidity={handleAddLiquidity}
-          />
+            <TabsContent value="stats" className="space-y-8">
+              <KpiCards data={data.kpis} />
+              <PoolOverview data={data.poolOverview} />
+              <RecentPayouts payouts={data.recentPayouts} />
+            </TabsContent>
 
-          <PoolOverview data={data.poolOverview} />
-
-          <RecentPayouts payouts={data.recentPayouts} />
+            <TabsContent value="pools" className="space-y-8">
+              <AvailablePools
+                pools={data.pools}
+                onAddLiquidity={handleAddLiquidity}
+              />
+            </TabsContent>
+          </Tabs>
         </div>
       </Container>
     </ProtectedRoute>
