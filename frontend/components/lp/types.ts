@@ -21,6 +21,8 @@ export interface LpPayout {
   amount: string;
   pool: string;
   txHash?: string;
+  /** "repayment" = invoice repaid (activity feed) */
+  type?: "payout" | "repayment";
 }
 
 /** Risk badge on pool card: Low / Med / High. */

@@ -152,7 +152,7 @@ export default function SMBDashboardPage() {
               ) : (
                 <>
                   <SmbStatsCards data={stats} />
-                  <SmbInvoiceList invoices={invoices} />
+                  <SmbInvoiceList invoices={invoices} onRefresh={fetchStats} />
                 </>
               )}
             </TabsContent>

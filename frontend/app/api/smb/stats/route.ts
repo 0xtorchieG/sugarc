@@ -29,6 +29,7 @@ export async function GET(request: NextRequest) {
     let settledCount = 0;
     const invoices: {
       id: string;
+      onchainInvoiceId?: string;
       amountUsdc: string;
       receivedUsdc: string;
       status: "active" | "settled" | "pending";
@@ -63,6 +64,7 @@ export async function GET(request: NextRequest) {
           const dueDateStr = dueDate ? new Date(Number(dueDate) * 1000).toISOString().slice(0, 10) : intent.input.dueDate;
           invoices.push({
             id: intent.intentId,
+            onchainInvoiceId: invoiceId,
             amountUsdc: faceNum.toFixed(2),
             receivedUsdc: advanceNum.toFixed(2),
             status: isRepaid ? "settled" : "active",
@@ -77,6 +79,7 @@ export async function GET(request: NextRequest) {
           activeCount += 1;
           invoices.push({
             id: intent.intentId,
+            onchainInvoiceId: intent.onchainInvoiceId,
             amountUsdc: String(intent.input.amountUsdc ?? 0),
             receivedUsdc: String(intent.pricing?.cashAdvancedUsdc ?? 0),
             status: "active",

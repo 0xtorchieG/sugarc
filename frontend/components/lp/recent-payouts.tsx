@@ -38,6 +38,7 @@ export function RecentPayouts({ payouts, className }: RecentPayoutsProps) {
             <TableHeader>
               <TableRow>
                 <TableHead>Date</TableHead>
+                <TableHead>Type</TableHead>
                 <TableHead>Amount</TableHead>
                 <TableHead>Pool</TableHead>
                 <TableHead>Tx</TableHead>
@@ -49,6 +50,13 @@ export function RecentPayouts({ payouts, className }: RecentPayoutsProps) {
                   <TableCell className="font-mono text-muted-foreground">
                     {row.date}
                   </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {row.type === "repayment" ? (
+                      <span className="text-emerald-600 dark:text-emerald-400">Repayment</span>
+                    ) : (
+                      "Payout"
+                    )}
+                  </TableCell>
                   <TableCell className="font-medium tabular-nums">
                     {row.amount}
                   </TableCell>
@@ -57,12 +65,15 @@ export function RecentPayouts({ payouts, className }: RecentPayoutsProps) {
                   </TableCell>
                   <TableCell>
                     {row.txHash ? (
-                      <span
-                        className="max-w-[8rem] truncate font-mono text-xs text-muted-foreground"
+                      <a
+                        href={`https://testnet.arcscan.io/tx/${row.txHash}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="max-w-[8rem] truncate font-mono text-xs text-primary hover:underline"
                         title={row.txHash}
                       >
                         {row.txHash.slice(0, 8)}…
-                      </span>
+                      </a>
                     ) : (
                       "—"
                     )}

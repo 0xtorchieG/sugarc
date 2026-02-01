@@ -56,16 +56,16 @@ async function pollForTxHash(
 }
 
 /**
- * POST /api/invoices/[intentId]/fund
+ * POST /api/invoices/[id]/fund — id = intentId
  * Load intent, call PoolVault.fundInvoice via Circle dev-controlled wallet, persist txHash + onchainInvoiceId.
  * Idempotent: if already funded, returns existing result.
  */
 export async function POST(
   request: NextRequest,
-  context: { params: Promise<{ intentId: string }> | { intentId: string } }
+  context: { params: Promise<{ id: string }> | { id: string } }
 ) {
   try {
-    const { intentId } =
+    const { id: intentId } =
       context.params instanceof Promise ? await context.params : context.params;
     const intent = await findIntentById(intentId);
     if (!intent) {

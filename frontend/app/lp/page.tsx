@@ -41,12 +41,15 @@ export default function LPDashboardPage() {
       const url = wallet?.address
         ? `/api/lp/pools?wallet=${encodeURIComponent(wallet.address)}`
         : "/api/lp/pools";
-      const res = await fetch(url);
-      if (!res.ok) throw new Error("Failed to fetch pools");
-      const json = await res.json();
+      const [poolsRes, activityRes] = await Promise.all([
+        fetch(url),
+        fetch("/api/lp/activity"),
+      ]);
+      if (!poolsRes.ok) throw new Error("Failed to fetch pools");
+      const json = await poolsRes.json();
       const pools: LpPool[] = (json.pools ?? []).map(mapApiPoolToLpPool);
       const apiKpis = json.kpis as LpKpis | undefined;
-      const kpis: LpKpis = apiKpis && (apiKpis.totalDeposited !== "—" || apiKpis.availableLiquidity !== "—")
+      let kpis: LpKpis = apiKpis && (apiKpis.totalDeposited !== "—" || apiKpis.availableLiquidity !== "—")
         ? apiKpis
         : { ...mockLpDashboardData.kpis };
       const poolOverview: LpPoolOverview =
@@ -59,11 +62,37 @@ export default function LPDashboardPage() {
                 ) + "%",
             }
           : { ...mockLpDashboardData.poolOverview };
+
+      let recentPayouts = mockLpDashboardData.recentPayouts as LpDashboardData["recentPayouts"];
+      if (activityRes.ok) {
+        const activityJson = await activityRes.json();
+        const repayments = (activityJson.repayments ?? []) as Array<{
+          id: string;
+          date: string;
+          amount: string;
+          pool: string;
+          txHash?: string;
+        }>;
+        const withType = repayments.map((r) => ({ ...r, type: "repayment" as const }));
+        recentPayouts =
+          withType.length > 0
+            ? [...withType, ...recentPayouts].slice(0, 15)
+            : recentPayouts;
+        // Earned fees from chain (sum of faceAmount - advanceAmount for repaid invoices)
+        const totalEarned = activityJson.totalEarnedFeesUsdc;
+        if (totalEarned != null && totalEarned !== "" && kpis) {
+          kpis = {
+            ...kpis,
+            earnedFees: `${totalEarned} USDC`,
+          };
+        }
+      }
+
       setData({
         kpis,
         poolOverview,
         pools,
-        recentPayouts: mockLpDashboardData.recentPayouts,
+        recentPayouts,
       });
     } catch (err) {
       console.error("fetchPools", err);
