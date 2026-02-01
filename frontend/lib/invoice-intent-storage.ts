@@ -17,6 +17,8 @@ export interface InvoiceIntentRecord {
   txHash?: string;
   /** Set when funded onchain */
   onchainInvoiceId?: string;
+  /** Set when repaid (simulate-paid or real); used for activity feed */
+  repayTxHash?: string;
   input: {
     amountUsdc: number;
     dueDate: string;
@@ -104,6 +106,28 @@ export async function updateIntentFunded(
     status: "funded",
     txHash,
     onchainInvoiceId,
+  };
+  await writeIntents(intents);
+}
+
+export async function findIntentByOnchainInvoiceId(
+  onchainInvoiceId: string
+): Promise<InvoiceIntentRecord | null> {
+  const intents = await readIntents();
+  return intents.find((i) => i.onchainInvoiceId === onchainInvoiceId) ?? null;
+}
+
+export async function updateIntentSettled(
+  intentId: string,
+  repayTxHash: string
+): Promise<void> {
+  const intents = await readIntents();
+  const idx = intents.findIndex((i) => i.intentId === intentId);
+  if (idx < 0) return;
+  intents[idx] = {
+    ...intents[idx],
+    status: "settled",
+    repayTxHash,
   };
   await writeIntents(intents);
 }

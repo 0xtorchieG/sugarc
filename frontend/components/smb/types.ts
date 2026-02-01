@@ -62,6 +62,8 @@ export type SmbInvoiceStatus = "active" | "settled" | "pending";
 /** Single factored invoice record (chain-derived later; mock for now). */
 export interface SmbInvoiceRecord {
   id: string;
+  /** On-chain invoice id (for simulate-paid demo) */
+  onchainInvoiceId?: string;
   /** Invoice face value (USDC) */
   amountUsdc: string;
   /** Cash advanced / received (USDC) */
