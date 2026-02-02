@@ -5,6 +5,7 @@ import {
   findIntentById,
   updateIntentFunded,
 } from "@/lib/invoice-intent-storage";
+import { sendPayerNotificationEmail } from "@/lib/send-payer-email";
 import { SUGARC_POOL_VAULT_ADDRESS } from "@/lib/contracts";
 
 const POOL_ID_MAP: Record<string, number> = {
@@ -246,6 +247,16 @@ export async function POST(
     }
 
     await updateIntentFunded(intentId, txHash, onchainInvoiceId);
+
+    if (intent.customerEmail?.trim()) {
+      await sendPayerNotificationEmail({
+        to: intent.customerEmail.trim(),
+        invoiceNumber: intent.invoiceNumber ?? undefined,
+        reference: intent.refHash ?? intentId,
+        amountUsdc: String(intent.input.amountUsdc),
+        dueDate: intent.input.dueDate,
+      });
+    }
 
     return NextResponse.json({
       txHash,

@@ -2,7 +2,7 @@
 
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { FileText, Calendar, BadgeCheck } from "lucide-react";
+import { FileText, Calendar, BadgeCheck, Mail, Hash, User } from "lucide-react";
 import type { CreditRating, SmbInvoiceInput } from "./types";
 import { cn } from "@/lib/utils";
 
@@ -20,6 +20,10 @@ interface InvoiceFormProps {
   value: SmbInvoiceInput;
   onChange: (value: SmbInvoiceInput) => void;
   className?: string;
+  /** When true, show customerEmail, invoiceNumber, payerName (e.g. after PDF parse) */
+  showPayerFields?: boolean;
+  /** When true, customerEmail is required */
+  requireCustomerEmail?: boolean;
 }
 
 function getMinDate() {
@@ -34,9 +38,58 @@ function getMaxDate() {
   return d.toISOString().slice(0, 10);
 }
 
-export function InvoiceForm({ value, onChange, className }: InvoiceFormProps) {
+export function InvoiceForm({
+  value,
+  onChange,
+  className,
+  showPayerFields,
+  requireCustomerEmail,
+}: InvoiceFormProps) {
   return (
     <div className={cn("space-y-4", className)}>
+      {showPayerFields && (
+        <>
+          <div className="space-y-2">
+            <Label htmlFor="smb-customer-email" className="flex items-center gap-2 text-muted-foreground">
+              <Mail className="h-4 w-4" />
+              Customer email {requireCustomerEmail && <span className="text-destructive">*</span>}
+            </Label>
+            <Input
+              id="smb-customer-email"
+              type="email"
+              placeholder="payer@example.com"
+              value={value.customerEmail ?? ""}
+              onChange={(e) => onChange({ ...value, customerEmail: e.target.value || undefined })}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="smb-invoice-number" className="flex items-center gap-2 text-muted-foreground">
+              <Hash className="h-4 w-4" />
+              Invoice number
+            </Label>
+            <Input
+              id="smb-invoice-number"
+              type="text"
+              placeholder="INV-001"
+              value={value.invoiceNumber ?? ""}
+              onChange={(e) => onChange({ ...value, invoiceNumber: e.target.value || undefined })}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="smb-payer-name" className="flex items-center gap-2 text-muted-foreground">
+              <User className="h-4 w-4" />
+              Payer name
+            </Label>
+            <Input
+              id="smb-payer-name"
+              type="text"
+              placeholder="Acme Corp"
+              value={value.payerName ?? ""}
+              onChange={(e) => onChange({ ...value, payerName: e.target.value || undefined })}
+            />
+          </div>
+        </>
+      )}
       <div className="space-y-2">
         <Label htmlFor="smb-amount" className="flex items-center gap-2 text-muted-foreground">
           <FileText className="h-4 w-4" />

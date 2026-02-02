@@ -13,6 +13,14 @@ export interface InvoiceIntentRecord {
   refHash: string;
   status: InvoiceIntentStatus;
   smbAddress: string;
+  /** Payer/customer email for payment instructions notification (FE/BE-014) */
+  customerEmail?: string;
+  /** Hash of extracted PDF text for stability (optional) */
+  extractedTextHash?: string;
+  /** Invoice number from PDF or manual (optional) */
+  invoiceNumber?: string;
+  /** Payer/customer name (optional) */
+  payerName?: string;
   /** Set when funded onchain */
   txHash?: string;
   /** Set when funded onchain */
