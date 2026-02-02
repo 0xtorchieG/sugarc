@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { Upload, Loader2 } from "lucide-react";
+import { Upload, Loader2, CheckCircle2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { SmbInvoiceInput } from "./types";
 
@@ -31,7 +31,7 @@ function getDefaultDueDate(): string {
 }
 
 export function InvoicePdfUpload({ onParsed, className }: InvoicePdfUploadProps) {
-  const [status, setStatus] = useState<"idle" | "uploading" | "error">("idle");
+  const [status, setStatus] = useState<"idle" | "uploading" | "done" | "error">("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
 
@@ -61,6 +61,7 @@ export function InvoicePdfUpload({ onParsed, className }: InvoicePdfUploadProps)
           extractedTextHash: data.extractedTextHash,
           fields: data.fields ?? {},
         });
+        setStatus("done");
       } catch {
         setErrorMessage("Upload failed");
         setStatus("error");
@@ -122,6 +123,12 @@ export function InvoicePdfUpload({ onParsed, className }: InvoicePdfUploadProps)
           <>
             <Loader2 className="h-10 w-10 animate-spin text-muted-foreground" />
             <p className="mt-2 text-sm text-muted-foreground">Parsing PDF…</p>
+          </>
+        ) : status === "done" ? (
+          <>
+            <CheckCircle2 className="h-10 w-10 text-green-600" />
+            <p className="mt-2 text-sm font-medium text-green-700">Parsed successfully</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">Drop another PDF to replace</p>
           </>
         ) : (
           <>

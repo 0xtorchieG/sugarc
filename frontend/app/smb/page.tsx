@@ -237,7 +237,10 @@ export default function SMBDashboardPage() {
                       </p>
                     </CardHeader>
                     <CardContent>
-                      <InvoicePdfUpload onParsed={handleParsedPdf} />
+                      <InvoicePdfUpload
+                        key={parsedFromPdf ? "parsed" : "upload"}
+                        onParsed={handleParsedPdf}
+                      />
                       <Button
                         variant="ghost"
                         size="sm"
