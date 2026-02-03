@@ -151,6 +151,102 @@ export async function POST(request: Request) {
         return NextResponse.json(data.data ?? data, { status: 200 });
       }
 
+      case "createUserWallet": {
+        const { userToken, blockchains } = params;
+        if (!userToken || !blockchains || !Array.isArray(blockchains) || blockchains.length === 0) {
+          return NextResponse.json(
+            { error: "Missing userToken or blockchains (non-empty array)" },
+            { status: 400 },
+          );
+        }
+
+        const response = await fetch(`${CIRCLE_BASE_URL}/v1/w3s/user/wallets`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${CIRCLE_API_KEY}`,
+            "X-User-Token": userToken,
+          },
+          body: JSON.stringify({
+            idempotencyKey: crypto.randomUUID(),
+            blockchains,
+            accountType: "SCA",
+          }),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          return NextResponse.json(data, { status: response.status });
+        }
+
+        return NextResponse.json(data.data ?? data, { status: 200 });
+      }
+
+      case "signTypedData": {
+        const { userToken, walletId, typedData, memo } = params;
+        if (!userToken || !walletId || !typedData) {
+          return NextResponse.json(
+            { error: "Missing userToken, walletId, or typedData" },
+            { status: 400 },
+          );
+        }
+
+        const dataStr = typeof typedData === "string" ? typedData : JSON.stringify(typedData);
+
+        const response = await fetch(`${CIRCLE_BASE_URL}/v1/w3s/user/sign/typedData`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${CIRCLE_API_KEY}`,
+            "X-User-Token": userToken,
+          },
+          body: JSON.stringify({
+            walletId,
+            data: dataStr,
+            ...(memo && { memo }),
+          }),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          return NextResponse.json(data, { status: response.status });
+        }
+
+        return NextResponse.json(data.data ?? data, { status: 200 });
+      }
+
+      case "getChallenge": {
+        const { userToken, challengeId } = params;
+        if (!userToken || !challengeId) {
+          return NextResponse.json(
+            { error: "Missing userToken or challengeId" },
+            { status: 400 },
+          );
+        }
+
+        const response = await fetch(
+          `${CIRCLE_BASE_URL}/v1/w3s/user/challenges/${String(challengeId)}`,
+          {
+            method: "GET",
+            headers: {
+              accept: "application/json",
+              Authorization: `Bearer ${CIRCLE_API_KEY}`,
+              "X-User-Token": userToken,
+            },
+          },
+        );
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          return NextResponse.json(data, { status: response.status });
+        }
+
+        return NextResponse.json(data.data ?? data, { status: 200 });
+      }
+
       case "getTokenBalance": {
         const { userToken, walletId } = params;
         if (!userToken || !walletId) {

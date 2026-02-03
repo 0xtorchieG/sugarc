@@ -138,6 +138,12 @@ export default function LPDashboardPage() {
     <ProtectedRoute>
       <Container>
         <div className="space-y-6">
+          <div className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-3 flex items-center gap-3">
+            <Layers className="h-5 w-5 shrink-0 text-primary" />
+            <p className="text-sm font-medium text-foreground">
+              Multichain liquidity with Arc as hub — Deposit USDC from Base Sepolia or Ethereum Sepolia directly into Sugarc pools. No manual bridging.
+            </p>
+          </div>
           <div>
             <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
               <Droplets className="h-7 w-7 text-primary" />
