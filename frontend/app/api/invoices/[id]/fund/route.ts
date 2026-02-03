@@ -252,7 +252,7 @@ export async function POST(
       await sendPayerNotificationEmail({
         to: intent.customerEmail.trim(),
         invoiceNumber: intent.invoiceNumber ?? undefined,
-        reference: intent.refHash ?? intentId,
+        reference: onchainInvoiceId,
         amountUsdc: String(intent.input.amountUsdc),
         dueDate: intent.input.dueDate,
       });

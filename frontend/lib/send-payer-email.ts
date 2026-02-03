@@ -6,7 +6,8 @@
 export interface PayerEmailParams {
   to: string;
   invoiceNumber?: string;
-  reference: string; // intentId or refHash
+  /** Onchain invoice ID — payer must include this in wire memo/reference */
+  reference: string;
   amountUsdc: string;
   dueDate: string;
 }
@@ -22,10 +23,10 @@ Your invoice has been factored. Please use the following payment instructions:
 Invoice amount: ${amountUsdc} 
 Due date: ${dueDate}
 
-Payment reference (include in wire memo): ${reference}
+Payment reference (MUST include in wire memo/reference): ${reference}
 
 New payment instructions:
-Please send payment to the account details provided by your factor. Reference: ${reference}.
+Please send your bank wire to the account details provided by your factor. Include the payment reference above in the wire memo/reference field so we can match your payment to this invoice.
 
 —
 Sugarc Invoice Factoring

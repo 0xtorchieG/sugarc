@@ -29,3 +29,6 @@ npm-debug.log*
 # Hardhat
 coverage/
 coverage.json
+
+# Hackathon JSON store (invoice intents)
+data/
