@@ -30,9 +30,16 @@ export type WireAccount = {
 
 export type WireInstructions = {
   trackingRef: string;
-  beneficiaryBank: {
-    accountNumber: string;
+  beneficiary?: { name?: string; address1?: string; address2?: string };
+  beneficiaryBank?: {
+    name?: string;
+    address?: string;
+    city?: string;
+    postalCode?: string;
+    country?: string;
+    swiftCode?: string;
     routingNumber?: string;
+    accountNumber: string;
     currency: string;
   };
 };
@@ -50,9 +57,14 @@ async function mintFetch<T>(
   path: string,
   options: RequestInit = {}
 ): Promise<T> {
-  const apiKey = process.env.CIRCLE_API_KEY ?? process.env.CIRCLE_MINT_API_KEY;
+  const apiKey =
+    process.env.CIRCLE_SAND_API_KEY ??
+    process.env.CIRCLE_MINT_API_KEY ??
+    process.env.CIRCLE_API_KEY;
   if (!apiKey) {
-    throw new Error("CIRCLE_API_KEY or CIRCLE_MINT_API_KEY required");
+    throw new Error(
+      "CIRCLE_SAND_API_KEY, CIRCLE_MINT_API_KEY, or CIRCLE_API_KEY required for Circle Mint"
+    );
   }
   const url = `${MINT_BASE}${path}`;
   const res = await fetch(url, {

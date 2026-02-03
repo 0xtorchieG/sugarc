@@ -249,12 +249,18 @@ export async function POST(
     await updateIntentFunded(intentId, txHash, onchainInvoiceId);
 
     if (intent.customerEmail?.trim()) {
+      const baseUrl =
+        process.env.NEXT_PUBLIC_APP_URL ??
+        (process.env.VERCEL_URL
+          ? `https://${process.env.VERCEL_URL}`
+          : "http://localhost:3000");
       await sendPayerNotificationEmail({
         to: intent.customerEmail.trim(),
         invoiceNumber: intent.invoiceNumber ?? undefined,
         reference: onchainInvoiceId,
         amountUsdc: String(intent.input.amountUsdc),
         dueDate: intent.input.dueDate,
+        payPageUrl: `${baseUrl}/pay/${onchainInvoiceId}`,
       });
     }
 

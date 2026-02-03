@@ -10,9 +10,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { FileText, Loader2, ArrowUpDown, ArrowUp, ArrowDown, Search } from "lucide-react";
+import { FileText, ArrowUpDown, ArrowUp, ArrowDown, Search } from "lucide-react";
 import type { SmbInvoiceRecord, SmbInvoiceStatus } from "./types";
 import { EmptyStateTable } from "@/components/lp/empty-state";
 import { cn } from "@/lib/utils";
@@ -90,7 +89,6 @@ export function SmbInvoiceList({ invoices, onRefresh, className }: SmbInvoiceLis
   const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>("asc");
-  const [simulatingId, setSimulatingId] = useState<string | null>(null);
 
   const filteredAndSorted = useMemo(() => {
     const list = invoices ?? [];
@@ -121,32 +119,6 @@ export function SmbInvoiceList({ invoices, onRefresh, className }: SmbInvoiceLis
 
   const hasRows = filteredAndSorted.length > 0;
 
-  async function handleSimulatePaid(row: SmbInvoiceRecord) {
-    const onchainId = row.onchainInvoiceId;
-    if (!onchainId || row.status !== "active") return;
-    setSimulatingId(row.id);
-    try {
-      const res = await fetch(`/api/invoices/${onchainId}/simulate-paid`, {
-        method: "POST",
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.details ?? err.error ?? "Simulate paid failed");
-      }
-      await onRefresh?.();
-    } catch (e) {
-      console.error("Simulate paid", e);
-      alert(e instanceof Error ? e.message : "Simulate paid failed");
-    } finally {
-      setSimulatingId(null);
-    }
-  }
-
-  // Show "Simulate paid" when we have any active funded invoice (so the action is discoverable)
-  const showDemoButton =
-    !!onRefresh &&
-    (invoices?.some((i) => i.status === "active" && i.onchainInvoiceId) ?? false);
-
   const emptyMessage =
     (invoices?.length ?? 0) === 0
       ? "Factored invoices will appear here (from your wallet on chain)."
@@ -160,9 +132,8 @@ export function SmbInvoiceList({ invoices, onRefresh, className }: SmbInvoiceLis
           Factored invoices
         </CardTitle>
         <p className="text-sm text-muted-foreground">
-          Active and recent settled. Data from chain. Use{" "}
-          <strong>Simulate paid</strong> on active invoices to demo the full
-          repayment cycle.
+          Active and recent settled. Data from chain. Payees receive an email with
+          a link to pay via wire; use the pay page to simulate the wire flow.
         </p>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -276,20 +247,11 @@ export function SmbInvoiceList({ invoices, onRefresh, className }: SmbInvoiceLis
                     )}
                   </button>
                 </TableHead>
-                {showDemoButton && (
-                  <TableHead className="min-w-[7rem] whitespace-nowrap">
-                    Actions
-                  </TableHead>
-                )}
               </TableRow>
             </TableHeader>
             <TableBody>
               {filteredAndSorted.map((row) => {
                 const status = statusConfig[row.status];
-                const canSimulate =
-                  showDemoButton &&
-                  row.status === "active" &&
-                  row.onchainInvoiceId != null;
                 return (
                   <TableRow key={row.id}>
                     <TableCell>
@@ -314,28 +276,6 @@ export function SmbInvoiceList({ invoices, onRefresh, className }: SmbInvoiceLis
                     <TableCell className="text-muted-foreground">
                       {row.pool}
                     </TableCell>
-                    {showDemoButton && (
-                      <TableCell className="whitespace-nowrap">
-                        {canSimulate ? (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            disabled={simulatingId === row.id}
-                            onClick={() => handleSimulatePaid(row)}
-                            title="Demo: marks invoice as repaid on-chain (approve USDC + repay)"
-                            className="min-w-0 shrink-0"
-                          >
-                            {simulatingId === row.id ? (
-                              <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
-                            ) : (
-                              <span className="truncate">Simulate paid</span>
-                            )}
-                          </Button>
-                        ) : (
-                          "—"
-                        )}
-                      </TableCell>
-                    )}
                   </TableRow>
                 );
               })}

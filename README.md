@@ -69,7 +69,7 @@ sugarc/
    ```
 4. Add to `.env`:
    ```
-   CIRCLE_API_KEY=your_sandbox_api_key
+   CIRCLE_SAND_API_KEY=your_mint_sandbox_key
    CIRCLE_MINT_BENEFICIARY_ACCOUNT=123815146304
    ```
    (Use the `beneficiaryBank.accountNumber` from step 3. Sandbox example: `123815146304`.)
@@ -94,3 +94,9 @@ npm run dev:frontend
    ```
 
 The operator wallet must have USDC to repay. Ensure `ENTITY_SECRET` and `OPERATOR_WALLET_ID` are set (same as invoice funding).
+
+### Full demo flow (UI)
+
+1. **SMB**: Create invoice (PDF or manual) → fund it → payer email is sent with link to `/pay/{invoiceId}`.
+2. **Payee**: Opens link (e.g. `http://localhost:3000/pay/0`) → sees wire instructions → clicks "Simulate wire & settle" (demo) → invoice repaid onchain.
+3. Set `NEXT_PUBLIC_APP_URL=http://localhost:3000` so the email contains the correct pay link.
