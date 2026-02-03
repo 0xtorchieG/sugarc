@@ -1,13 +1,15 @@
 "use client";
 
 import { useState, useMemo, useEffect, useCallback } from "react";
-import { FileStack, BarChart3, FilePlus } from "lucide-react";
+import { FileStack, BarChart3, FilePlus, FileUp, PenLine } from "lucide-react";
 import { Container } from "@/components/layout/container";
 import { ProtectedRoute } from "@/components/auth/protected-route";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Spinner } from "@/components/ui/spinner";
 import { InvoiceForm } from "@/components/smb/invoice-form";
+import { InvoicePdfUpload, parsedFieldsToInput, type ParseResult } from "@/components/smb/invoice-pdf-upload";
 import { PricingPreviewCard } from "@/components/smb/pricing-preview-card";
 import { OfferConfirmation } from "@/components/smb/offer-confirmation";
 import { SmbStatsCards } from "@/components/smb/smb-stats-cards";
@@ -41,6 +43,8 @@ export default function SMBDashboardPage() {
   const [stats, setStats] = useState<SmbStats | null>(mockSmbStats);
   const [invoices, setInvoices] = useState<SmbInvoiceRecord[]>(mockSmbInvoices);
   const [statsLoading, setStatsLoading] = useState(true);
+  const [parsedFromPdf, setParsedFromPdf] = useState<ParseResult | null>(null);
+  const [createMode, setCreateMode] = useState<"choose" | "pdf" | "manual">("choose");
 
   const fetchStats = useCallback(async () => {
     if (!wallet?.address) {
@@ -82,11 +86,36 @@ export default function SMBDashboardPage() {
   }, [input.dueDate]);
   const isRejected = tenorDays > 90;
   const isEmpty = input.amountUsdc <= 0 || !input.dueDate;
-  const canContinue = !isEmpty && !isRejected && pricing !== null;
+  const fromPdf = parsedFromPdf !== null;
+  const customerEmailRequired = fromPdf && !(input.customerEmail?.trim());
+  const canContinue =
+    !isEmpty &&
+    !isRejected &&
+    pricing !== null &&
+    !customerEmailRequired;
+
+  function handleParsedPdf(result: ParseResult) {
+    setParsedFromPdf(result);
+    setInput((prev) => ({
+      ...defaultInput,
+      ...parsedFieldsToInput(result.fields, prev),
+    }));
+    setCreateMode("pdf");
+  }
+
+  function handleSwitchToManual() {
+    setParsedFromPdf(null);
+    setInput(defaultInput);
+    setCreateMode("manual");
+  }
 
   function handleContinue() {
     if (!pricing) return;
-    setLockedOffer({ input: { ...input }, pricing });
+    setLockedOffer({
+      input: { ...input },
+      pricing,
+      ...(parsedFromPdf && { extractedTextHash: parsedFromPdf.extractedTextHash }),
+    });
     setStep("confirm");
   }
 
@@ -161,30 +190,133 @@ export default function SMBDashboardPage() {
               <div>
                 <h2 className="text-lg font-semibold">Request USDC payout</h2>
                 <p className="mt-0.5 text-sm text-muted-foreground">
-                  Enter invoice details for a discount-driven quote.
+                  Upload an invoice PDF to auto-fill fields, or enter details manually.
                 </p>
               </div>
 
-              <div className="grid gap-8 lg:grid-cols-2">
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Invoice details</CardTitle>
-                    <p className="text-sm text-muted-foreground">
-                      Amount, due date, and payer credit rating (AAA → B, Unknown).
-                    </p>
-                  </CardHeader>
-                  <CardContent>
-                    <InvoiceForm value={input} onChange={setInput} />
-                  </CardContent>
-                </Card>
+              {createMode === "choose" && (
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <Card
+                    className="cursor-pointer transition-colors hover:border-primary/50"
+                    onClick={() => setCreateMode("pdf")}
+                  >
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <FileUp className="h-5 w-5" />
+                        Upload PDF
+                      </CardTitle>
+                      <p className="text-sm text-muted-foreground">
+                        Drag & drop your invoice PDF to auto-fill amount, due date, and more.
+                      </p>
+                    </CardHeader>
+                  </Card>
+                  <Card
+                    className="cursor-pointer transition-colors hover:border-primary/50"
+                    onClick={() => setCreateMode("manual")}
+                  >
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <PenLine className="h-5 w-5" />
+                        Enter manually
+                      </CardTitle>
+                      <p className="text-sm text-muted-foreground">
+                        Type invoice amount, due date, and payer rating.
+                      </p>
+                    </CardHeader>
+                  </Card>
+                </div>
+              )}
 
-                <PricingPreviewCard
-                  result={isRejected ? null : pricing}
-                  isEmpty={isEmpty}
-                  isRejected={!isEmpty && isRejected}
-                  onContinue={canContinue ? handleContinue : undefined}
-                />
-              </div>
+              {createMode === "pdf" && (
+                <>
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Upload invoice PDF</CardTitle>
+                      <p className="text-sm text-muted-foreground">
+                        We&apos;ll extract amount, due date, and customer email for payment instructions.
+                      </p>
+                    </CardHeader>
+                    <CardContent>
+                      <InvoicePdfUpload
+                        key={parsedFromPdf ? "parsed" : "upload"}
+                        onParsed={handleParsedPdf}
+                      />
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="mt-2"
+                        onClick={handleSwitchToManual}
+                      >
+                        Enter manually instead
+                      </Button>
+                    </CardContent>
+                  </Card>
+                  {parsedFromPdf && (
+                    <div className="grid gap-8 lg:grid-cols-2">
+                      <Card>
+                        <CardHeader>
+                          <CardTitle>Review & edit</CardTitle>
+                          <p className="text-sm text-muted-foreground">
+                            Check parsed fields and add customer email for payer notification.
+                          </p>
+                        </CardHeader>
+                        <CardContent>
+                          <InvoiceForm
+                            value={input}
+                            onChange={setInput}
+                            showPayerFields
+                            requireCustomerEmail
+                          />
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="mt-2"
+                            onClick={() => setParsedFromPdf(null)}
+                          >
+                            Upload a different PDF
+                          </Button>
+                        </CardContent>
+                      </Card>
+                      <PricingPreviewCard
+                        result={isRejected ? null : pricing}
+                        isEmpty={isEmpty}
+                        isRejected={!isEmpty && isRejected}
+                        onContinue={canContinue ? handleContinue : undefined}
+                      />
+                    </div>
+                  )}
+                </>
+              )}
+
+              {createMode === "manual" && (
+                <div className="grid gap-8 lg:grid-cols-2">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Invoice details</CardTitle>
+                      <p className="text-sm text-muted-foreground">
+                        Amount, due date, and payer credit rating (AAA → B, Unknown).
+                      </p>
+                    </CardHeader>
+                    <CardContent>
+                      <InvoiceForm value={input} onChange={setInput} />
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="mt-2"
+                        onClick={() => setCreateMode("choose")}
+                      >
+                        Upload PDF instead
+                      </Button>
+                    </CardContent>
+                  </Card>
+                  <PricingPreviewCard
+                    result={isRejected ? null : pricing}
+                    isEmpty={isEmpty}
+                    isRejected={!isEmpty && isRejected}
+                    onContinue={canContinue ? handleContinue : undefined}
+                  />
+                </div>
+              )}
             </TabsContent>
           </Tabs>
         </div>

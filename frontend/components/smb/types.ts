@@ -15,11 +15,17 @@ export type CreditRating =
   | "B"
   | "Unknown";
 
-/** Form values: invoice amount, due date, payer credit rating. */
+/** Form values: invoice amount, due date, payer credit rating; optional PDF-derived fields. */
 export interface SmbInvoiceInput {
   amountUsdc: number;
   dueDate: string; // ISO date YYYY-MM-DD
   payerCreditRating: CreditRating;
+  /** Payer/customer email (required for PDF flow; used for payment instructions notification) */
+  customerEmail?: string;
+  /** Invoice number from PDF or manual */
+  invoiceNumber?: string;
+  /** Payer/customer name */
+  payerName?: string;
 }
 
 /** System-computed pricing result (mock or API). */
@@ -42,6 +48,8 @@ export interface SmbPricingResult {
 export interface SmbLockedOffer {
   input: SmbInvoiceInput;
   pricing: SmbPricingResult;
+  /** Set when offer was created from PDF parse (for refHash stability) */
+  extractedTextHash?: string;
 }
 
 /** SMB dashboard stats (read from chain by wallet later; mock for now). */

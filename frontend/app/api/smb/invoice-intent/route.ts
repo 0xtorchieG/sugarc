@@ -42,6 +42,10 @@ const postBodySchema = z.object({
   input: inputSchema,
   pricing: pricingSchema,
   smbAddress: z.string().optional(),
+  customerEmail: z.preprocess((v) => (v === "" ? undefined : v), z.string().email().optional()),
+  extractedTextHash: z.string().optional(),
+  invoiceNumber: z.string().optional(),
+  payerName: z.string().optional(),
 });
 
 function toBytes32Hex(bytes: Uint8Array): string {
@@ -79,7 +83,15 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-    const { input, pricing, smbAddress = "" } = parsed.data;
+    const {
+      input,
+      pricing,
+      smbAddress = "",
+      customerEmail,
+      extractedTextHash,
+      invoiceNumber,
+      payerName,
+    } = parsed.data;
 
     const intentId = `intent_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
     const poolId = pricing.eligiblePool;
@@ -106,6 +118,10 @@ export async function POST(request: NextRequest) {
       refHash,
       status,
       smbAddress,
+      ...(customerEmail && customerEmail.trim() && { customerEmail: customerEmail.trim() }),
+      ...(extractedTextHash && { extractedTextHash }),
+      ...(invoiceNumber && { invoiceNumber }),
+      ...(payerName && { payerName }),
       input: {
         amountUsdc: input.amountUsdc,
         dueDate: input.dueDate,

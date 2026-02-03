@@ -72,6 +72,10 @@ export function OfferConfirmation({
         input: offer.input,
         pricing: offer.pricing,
         ...(wallet?.address && { smbAddress: wallet.address }),
+        ...(offer.input.customerEmail && { customerEmail: offer.input.customerEmail }),
+        ...(offer.input.invoiceNumber && { invoiceNumber: offer.input.invoiceNumber }),
+        ...(offer.input.payerName && { payerName: offer.input.payerName }),
+        ...(offer.extractedTextHash && { extractedTextHash: offer.extractedTextHash }),
       };
       const res = await fetch("/api/smb/invoice-intent", {
         method: "POST",
