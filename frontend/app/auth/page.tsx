@@ -8,6 +8,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 import { setCookie, getCookie } from "cookies-next";
 import { SocialLoginProvider } from "@circle-fin/w3s-pw-web-sdk/dist/src/types";
@@ -26,10 +27,23 @@ type LoginResult = { userToken: string; encryptionKey: string; refreshToken?: st
 type Wallet = { id: string; address: string; blockchain: string; [key: string]: unknown };
 
 const ALLOWED_RETURN_TO = ["/smb", "/lp"];
+const RETURN_TO_KEY = "sugarc_auth_return_to";
 
 function isAllowedReturnTo(path: string | null): path is string {
   if (!path || typeof path !== "string") return false;
   return ALLOWED_RETURN_TO.includes(path);
+}
+
+function getReturnTo(urlParam: string | null): string | null {
+  if (isAllowedReturnTo(urlParam)) return urlParam;
+  if (typeof window === "undefined") return null;
+  const stored = sessionStorage.getItem(RETURN_TO_KEY);
+  if (isAllowedReturnTo(stored)) return stored;
+  return null;
+}
+
+function clearReturnTo() {
+  if (typeof window !== "undefined") sessionStorage.removeItem(RETURN_TO_KEY);
 }
 
 export default function AuthPage() {
@@ -60,6 +74,11 @@ export default function AuthPage() {
   useEffect(() => {
     acceptingLoginRef.current = true;
     let cancelled = false;
+
+    // Persist returnTo across OAuth redirect (Google strips URL params on callback)
+    if (typeof window !== "undefined" && isAllowedReturnTo(returnTo)) {
+      sessionStorage.setItem(RETURN_TO_KEY, returnTo);
+    }
 
     const stored =
       typeof window !== "undefined" ? window.sessionStorage.getItem("circle_login_result") : null;
@@ -396,44 +415,19 @@ export default function AuthPage() {
 
   const primaryWallet = wallets[0];
 
+  // Redirect after login: use returnTo from URL or sessionStorage (persisted across OAuth), else default to /lp
   useEffect(() => {
-    if (isAuthenticated && wallet && isAllowedReturnTo(returnTo)) {
-      router.replace(returnTo);
-    }
+    if (!isAuthenticated || !wallet) return;
+    const target = getReturnTo(returnTo) ?? "/lp";
+    clearReturnTo();
+    router.replace(target);
   }, [isAuthenticated, wallet, returnTo, router]);
 
   if (isAuthenticated && wallet) {
-    if (isAllowedReturnTo(returnTo)) {
-      return (
-        <Container>
-          <div className="mx-auto flex min-h-[60vh] max-w-md flex-col justify-center px-4 py-12 text-center">
-            <p className="text-muted-foreground">Redirecting you…</p>
-          </div>
-        </Container>
-      );
-    }
     return (
       <Container>
-        <div className="mx-auto flex min-h-[60vh] max-w-md flex-col justify-center px-4 py-12">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-2xl">You&apos;re signed in</CardTitle>
-              <CardDescription>
-                Your wallet is ready. Go to your dashboard or explore the app.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-3">
-              <Button asChild size="lg">
-                <Link href="/lp">Liquidity Provider</Link>
-              </Button>
-              <Button variant="outline" asChild size="lg">
-                <Link href="/smb">SMB Dashboard</Link>
-              </Button>
-              <Button variant="outline" asChild>
-                <Link href="/">Home</Link>
-              </Button>
-            </CardContent>
-          </Card>
+        <div className="mx-auto flex min-h-[60vh] max-w-md flex-col justify-center px-4 py-12 text-center">
+          <p className="text-muted-foreground">Taking you to your dashboard…</p>
         </div>
       </Container>
     );
@@ -452,6 +446,16 @@ export default function AuthPage() {
 
         <Card>
           <CardHeader className="text-center space-y-1">
+            <div className="mx-auto mb-2 flex justify-center">
+              <Image
+                src="/icon.png"
+                alt=""
+                width={48}
+                height={48}
+                className="h-12 w-12"
+                aria-hidden
+              />
+            </div>
             <CardTitle className="text-2xl">Welcome to Sugarc</CardTitle>
             <CardDescription>
               Sign in with Google to create your wallet. We&apos;ll set everything up automatically.
