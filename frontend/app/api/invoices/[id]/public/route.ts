@@ -59,7 +59,7 @@ export async function GET(
     const remaining = faceAmount - repaidAmount;
     const faceAmountUsdc = ethers.formatUnits(faceAmount, USDC_DECIMALS);
     const remainingUsdc = ethers.formatUnits(
-      remaining > 0n ? remaining : 0n,
+      remaining > BigInt(0) ? remaining : BigInt(0),
       USDC_DECIMALS
     );
 
@@ -69,7 +69,7 @@ export async function GET(
       repaidAmountUsdc: ethers.formatUnits(repaidAmount, USDC_DECIMALS),
       remainingUsdc,
       status: statusEnum === STATUS_REPAID ? "repaid" : "funded",
-      canPay: statusEnum === STATUS_FUNDED && remaining > 0n,
+      canPay: statusEnum === STATUS_FUNDED && remaining > BigInt(0),
     });
   } catch (err) {
     console.error("GET /api/invoices/[id]/public", err);

@@ -11,6 +11,7 @@ import { PoolOverview } from "@/components/lp/pool-overview";
 import { AvailablePools } from "@/components/lp/available-pools";
 import { RecentPayouts } from "@/components/lp/recent-payouts";
 import { DepositModal } from "@/components/lp/deposit-modal";
+import { CreateUserWalletTestButton } from "@/components/lp/create-user-wallet-test-button";
 import { useAuth } from "@/contexts/auth-context";
 import { mockLpDashboardData } from "@/components/lp/mock-data";
 import type { LpDashboardData, LpPool, LpKpis, LpPoolOverview } from "@/components/lp/types";
@@ -138,6 +139,15 @@ export default function LPDashboardPage() {
     <ProtectedRoute>
       <Container>
         <div className="space-y-6">
+          <div className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-3 flex flex-col gap-3 sm:flex-row sm:items-center">
+            <div className="flex items-center gap-3 flex-1">
+              <Layers className="h-5 w-5 shrink-0 text-primary" />
+              <p className="text-sm font-medium text-foreground">
+                Multichain liquidity with Arc as hub — Deposit USDC on Arc. Base Sepolia and Ethereum Sepolia coming soon.
+              </p>
+            </div>
+            <CreateUserWalletTestButton />
+          </div>
           <div>
             <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
               <Droplets className="h-7 w-7 text-primary" />
