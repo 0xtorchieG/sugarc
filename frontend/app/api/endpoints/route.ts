@@ -217,6 +217,39 @@ export async function POST(request: Request) {
         return NextResponse.json(data.data ?? data, { status: 200 });
       }
 
+      case "refreshUserToken": {
+        const { userToken, refreshToken, deviceId } = params;
+        if (!userToken || !refreshToken || !deviceId) {
+          return NextResponse.json(
+            { error: "Missing userToken, refreshToken, or deviceId" },
+            { status: 400 },
+          );
+        }
+
+        const response = await fetch(`${CIRCLE_BASE_URL}/v1/w3s/users/token/refresh`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${CIRCLE_API_KEY}`,
+            "X-User-Token": userToken,
+          },
+          body: JSON.stringify({
+            idempotencyKey: crypto.randomUUID(),
+            refreshToken,
+            deviceId,
+          }),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          return NextResponse.json(data, { status: response.status });
+        }
+
+        const result = data.data ?? data;
+        return NextResponse.json(result, { status: 200 });
+      }
+
       case "getChallenge": {
         const { userToken, challengeId } = params;
         if (!userToken || !challengeId) {

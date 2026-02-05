@@ -23,6 +23,8 @@ export interface BurnIntentParams {
   amountRaw: bigint;
   /** Recipient on Arc (default: depositor) */
   recipientAddress?: string;
+  /** Signer address (for delegate flow; default: depositor) */
+  signerAddress?: string;
 }
 
 /** Create burn intent for Gateway transfer (source chain → Arc) */
@@ -32,6 +34,7 @@ export function createBurnIntent(params: BurnIntentParams) {
     depositorAddress,
     amountRaw,
     recipientAddress = depositorAddress,
+    signerAddress = depositorAddress,
   } = params;
 
   const sourceDomain = GATEWAY_DOMAINS[sourceChain];
@@ -59,7 +62,7 @@ export function createBurnIntent(params: BurnIntentParams) {
       destinationToken: addressToBytes32(destUsdc),
       sourceDepositor: addressToBytes32(depositorAddress),
       destinationRecipient: addressToBytes32(recipientAddress),
-      sourceSigner: addressToBytes32(depositorAddress),
+      sourceSigner: addressToBytes32(signerAddress),
       destinationCaller: addressToBytes32("0x0000000000000000000000000000000000000000"),
       value: amountRaw,
       salt,

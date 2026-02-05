@@ -28,7 +28,7 @@ export const SUGARC_POOL_VAULT_ADDRESS = arcTestnet.contracts.SugarcPoolVault
 /** USDC on Arc Testnet (6 decimals) */
 export const ARC_USDC_ADDRESS = "0x3600000000000000000000000000000000000000" as `0x${string}`;
 
-/** SugarcPoolVault ABI (for ethers, viem, wagmi) */
+/** SugarcPoolVault ABI (for ethers) */
 export const SUGARC_POOL_VAULT_ABI = arcTestnet.contracts.SugarcPoolVault.abi;
 
 /** Deployment info for Arc Testnet */

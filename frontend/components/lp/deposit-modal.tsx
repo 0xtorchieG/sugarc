@@ -16,11 +16,6 @@ import {
   GATEWAY_MINTER_ADDRESS,
   USDC_ADDRESSES,
 } from "@/lib/gateway";
-import {
-  createBurnIntent,
-  buildBurnIntentTypedData,
-  type SourceChain,
-} from "@/lib/gateway-burn-intent";
 import type { LpPool } from "./types";
 
 const POOL_ID_MAP: Record<string, number> = {
@@ -31,12 +26,7 @@ const POOL_ID_MAP: Record<string, number> = {
 
 const CIRCLE_LOGIN_KEY = "circle_login_result";
 
-/** Circle blockchain IDs */
-const CHAIN_TO_BLOCKCHAIN: Record<string, string> = {
-  arc: "ARC-TESTNET",
-  baseSepolia: "BASE-SEPOLIA",
-  sepolia: "ETH-SEPOLIA",
-};
+type SourceChain = "arc" | "baseSepolia";
 
 interface DepositModalProps {
   pool: LpPool;
@@ -44,22 +34,19 @@ interface DepositModalProps {
   onSuccess?: () => void;
 }
 
-type DepositChain = "arc" | "baseSepolia" | "sepolia";
-
 export function DepositModal({ pool, onClose, onSuccess }: DepositModalProps) {
-  const { wallet } = useAuth();
+  const { wallet, walletsPerChain, logout, refreshWallet } = useAuth();
   const [amount, setAmount] = useState("");
-  const [sourceChain, setSourceChain] = useState<DepositChain>("arc");
+  const [sourceChain, setSourceChain] = useState<SourceChain>("arc");
   const [status, setStatus] = useState<
     | "idle"
     | "creating_wallet"
-    | "gateway_approving"
-    | "gateway_depositing"
-    | "signing_burn"
-    | "fetching_attestation"
-    | "minting"
     | "approving"
     | "depositing"
+    | "adding_delegate"
+    | "confirming_delegate"
+    | "transferring"
+    | "minting"
     | "success"
     | "error"
   >("idle");
@@ -67,7 +54,6 @@ export function DepositModal({ pool, onClose, onSuccess }: DepositModalProps) {
 
   const poolId = POOL_ID_MAP[pool.kind];
   const amountRaw = amount ? Math.floor(parseFloat(amount) * 1e6) : 0;
-  const useGateway = sourceChain !== "arc";
 
   const executeChallenge = useCallback(
     async (challengeId: string): Promise<boolean> => {
@@ -76,18 +62,18 @@ export function DepositModal({ pool, onClose, onSuccess }: DepositModalProps) {
           ? window.sessionStorage.getItem(CIRCLE_LOGIN_KEY)
           : null;
       if (!stored) {
-        setError("Not signed in");
+        setError("Not signed in. Please log in again.");
         return false;
       }
       let creds: { userToken?: string; encryptionKey?: string };
       try {
         creds = JSON.parse(stored);
       } catch {
-        setError("Session expired");
+        setError("Session expired. Please log out and log back in.");
         return false;
       }
       if (!creds?.userToken || !creds?.encryptionKey) {
-        setError("Session expired");
+        setError("Session expired. Please log out and log back in.");
         return false;
       }
       const appId = process.env.NEXT_PUBLIC_CIRCLE_APP_ID;
@@ -95,24 +81,53 @@ export function DepositModal({ pool, onClose, onSuccess }: DepositModalProps) {
         setError("App not configured");
         return false;
       }
-      const { W3SSdk } = await import("@circle-fin/w3s-pw-web-sdk");
-      const sdk = new W3SSdk({ appSettings: { appId } }, () => {});
-      sdk.setAuthentication({
-        userToken: creds.userToken,
-        encryptionKey: creds.encryptionKey,
-      });
-      return new Promise((resolve) => {
-        sdk.execute(challengeId, (err) => {
-          if (err) {
-            setError(
-              (err as { message?: string })?.message ?? "Transaction failed"
-            );
-            resolve(false);
-          } else {
-            resolve(true);
-          }
+
+      const tryExecute = async (): Promise<boolean> => {
+        const current =
+          typeof window !== "undefined"
+            ? window.sessionStorage.getItem(CIRCLE_LOGIN_KEY)
+            : null;
+        const c = current
+          ? (JSON.parse(current) as { userToken?: string; encryptionKey?: string })
+          : creds;
+        const { W3SSdk } = await import("@circle-fin/w3s-pw-web-sdk");
+        const sdk = new W3SSdk({ appSettings: { appId } }, () => {});
+        sdk.setAuthentication({
+          userToken: (c.userToken ?? creds.userToken)!,
+          encryptionKey: (c.encryptionKey ?? creds.encryptionKey)!,
         });
-      });
+        return new Promise((resolve) => {
+          sdk.execute(challengeId, (err) => {
+            if (err) {
+              const msg = (err as { message?: string })?.message ?? "";
+              const isTokenError =
+                msg.includes("user token") ||
+                msg.includes("userToken") ||
+                msg.includes("Cannot find");
+              if (isTokenError) {
+                setError(
+                  "Session expired. Please log out and log back in to continue."
+                );
+              } else {
+                setError(msg || "Transaction failed");
+              }
+              resolve(false);
+            } else {
+              resolve(true);
+            }
+          });
+        });
+      };
+
+      let result = await tryExecute();
+      if (!result) {
+        const refreshed = await refreshTokenIfNeeded();
+        if (refreshed) {
+          setError(null);
+          result = await tryExecute();
+        }
+      }
+      return result;
     },
     []
   );
@@ -126,103 +141,135 @@ export function DepositModal({ pool, onClose, onSuccess }: DepositModalProps) {
     const creds = JSON.parse(stored) as {
       userToken?: string;
       encryptionKey?: string;
+      refreshToken?: string;
     };
     if (!creds?.userToken) throw new Error("Session expired");
     return creds;
   }
 
-  async function getWalletForChain(chain: DepositChain): Promise<{
-    id: string;
-    address: string;
-    blockchain: string;
-  } | null> {
+  async function refreshTokenIfNeeded(): Promise<boolean> {
     const creds = await getCreds();
+    if (!creds.refreshToken) return false;
+    const deviceId =
+      typeof window !== "undefined" ? window.localStorage.getItem("deviceId") : null;
+    if (!deviceId) return false;
     const res = await fetch("/api/endpoints", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "listWallets", userToken: creds.userToken }),
+      body: JSON.stringify({
+        action: "refreshUserToken",
+        userToken: creds.userToken,
+        refreshToken: creds.refreshToken,
+        deviceId,
+      }),
     });
     const data = await res.json();
-    if (!res.ok || !data.wallets?.length) return null;
-    const wallets = data.wallets as {
-      id: string;
-      address: string;
-      blockchain: string;
-    }[];
-    const target = CHAIN_TO_BLOCKCHAIN[chain];
-    const found = wallets.find((w) => {
-      const b = (w.blockchain ?? "").toUpperCase();
-      return b === target || b.includes(target.replace("-TESTNET", ""));
-    });
-    return found ?? (chain === "arc" ? wallets[0] : null);
+    if (!res.ok || !data.userToken || !data.encryptionKey) return false;
+    const updated = {
+      ...creds,
+      userToken: data.userToken,
+      encryptionKey: data.encryptionKey,
+      refreshToken: data.refreshToken ?? creds.refreshToken,
+    };
+    if (typeof window !== "undefined") {
+      window.sessionStorage.setItem(CIRCLE_LOGIN_KEY, JSON.stringify(updated));
+    }
+    return true;
   }
 
-  async function ensureWalletForChain(
-    chain: DepositChain
-  ): Promise<{ id: string; address: string }> {
-    let w = await getWalletForChain(chain);
-    if (w) return w;
+  async function ensureBaseSepoliaWallet(): Promise<{
+    id: string;
+    address: string;
+  } | null> {
+    const baseWallet = walletsPerChain.baseSepolia;
+    if (baseWallet) return baseWallet;
 
-    const creds = await getCreds();
-    const blockchain = CHAIN_TO_BLOCKCHAIN[chain];
     setStatus("creating_wallet");
-    const createRes = await fetch("/api/endpoints", {
+    const creds = await getCreds();
+    const res = await fetch("/api/endpoints", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         action: "createUserWallet",
         userToken: creds.userToken,
-        blockchains: [blockchain],
+        blockchains: ["BASE-SEPOLIA"],
       }),
     });
-    const createData = await createRes.json();
-    if (!createRes.ok || !createData.challengeId) {
-      throw new Error(createData.message ?? createData.error ?? "Failed to create wallet");
-    }
-    const ok = await executeChallenge(createData.challengeId);
-    if (!ok) throw new Error("Wallet creation cancelled");
+    const data = await res.json();
 
-    await new Promise((r) => setTimeout(r, 1500));
-    w = await getWalletForChain(chain);
-    if (!w) throw new Error("Wallet not found after creation");
-    return w;
+    if (!res.ok) {
+      const errMsg =
+        data.code === 155508
+          ? "Circle does not allow multiple wallets. Use Arc deposit."
+          : data.message ?? data.error ?? JSON.stringify(data);
+      setError(errMsg);
+      setStatus("error");
+      return null;
+    }
+
+    const challengeId = data.challengeId ?? data.data?.challengeId;
+    if (challengeId) {
+      const ok = await executeChallenge(challengeId);
+      if (!ok) {
+        setStatus("error");
+        return null;
+      }
+    }
+
+    await refreshWallet();
+    const updated = (await fetch("/api/endpoints", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "listWallets", userToken: creds.userToken }),
+    }).then((r) => r.json())) as { wallets?: { id: string; address: string; blockchain: string }[] };
+    const newWallet = updated.wallets?.find((w: { blockchain: string }) =>
+      w.blockchain.toUpperCase().includes("BASE")
+    );
+    if (!newWallet) {
+      setError("Base Sepolia wallet not found after creation");
+      setStatus("error");
+      return null;
+    }
+    return newWallet;
   }
 
-  async function pollChallengeForSignature(
-    challengeId: string
-  ): Promise<string | null> {
+  async function runContractChallenge(
+    walletId: string,
+    contractAddress: string,
+    abiFunctionSignature: string,
+    abiParameters: string[]
+  ): Promise<boolean> {
     const creds = await getCreds();
-    for (let i = 0; i < 30; i++) {
-      await new Promise((r) => setTimeout(r, 500));
-      const res = await fetch("/api/endpoints", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "getChallenge",
-          userToken: creds.userToken,
-          challengeId,
-        }),
-      });
-      const data = await res.json();
-      const ch = data.challenge ?? data.data?.challenge ?? data;
-      if (ch?.status === "COMPLETE") {
-        const sig =
-          ch.signature ??
-          ch.data?.signature ??
-          ch.result?.signature ??
-          ch.result ??
-          data.signature ??
-          data.data?.signature;
-        if (typeof sig === "string" && sig.startsWith("0x")) return sig;
-      }
-      if (ch?.status === "FAILED" || ch?.status === "EXPIRED") return null;
+    const res = await fetch("/api/endpoints", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "createContractExecutionChallenge",
+        userToken: creds.userToken,
+        walletId,
+        contractAddress,
+        abiFunctionSignature,
+        abiParameters,
+        feeLevel: "MEDIUM",
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.challengeId) {
+      setError(data.message ?? data.error ?? "Challenge failed");
+      return false;
     }
-    return null;
+    return executeChallenge(data.challengeId);
   }
 
   async function handleSubmit() {
-    if (!wallet?.id || !wallet?.address) {
-      setError("Connect your wallet first");
+    // Arc flow: use connected wallet (Arc-initialized users have Arc as primary). Base Sepolia flow: need Arc wallet for final deposit.
+    const arcWallet = walletsPerChain.arc ?? wallet;
+    if (!arcWallet?.id || !arcWallet?.address) {
+      setError(
+        sourceChain === "arc"
+          ? "No Arc wallet found. Connect your Circle wallet."
+          : "No Arc wallet found for final deposit. Ensure you have an Arc wallet."
+      );
       return;
     }
     if (!amount || amountRaw <= 0) {
@@ -233,224 +280,173 @@ export function DepositModal({ pool, onClose, onSuccess }: DepositModalProps) {
     setError(null);
 
     try {
-      if (useGateway) {
-        const sourceChainKey = sourceChain as SourceChain;
-        const sourceWallet = await ensureWalletForChain(sourceChain);
-        const sourceUsdc =
-          USDC_ADDRESSES[sourceChainKey as keyof typeof USDC_ADDRESSES];
-
-        setStatus("gateway_approving");
-        const approveRes = await fetch("/api/endpoints", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            action: "createContractExecutionChallenge",
-            userToken: (await getCreds()).userToken,
-            walletId: sourceWallet.id,
-            contractAddress: sourceUsdc,
-            abiFunctionSignature: "approve(address,uint256)",
-            abiParameters: [
-              GATEWAY_WALLET_ADDRESS,
-              amountRaw.toString(),
-            ],
-            feeLevel: "MEDIUM",
-          }),
-        });
-        const approveData = await approveRes.json();
-        if (!approveRes.ok || !approveData.challengeId) {
-          setError(approveData.message ?? approveData.error ?? "Failed to approve");
-          setStatus("error");
-          return;
-        }
-        const approved = await executeChallenge(approveData.challengeId);
+      if (sourceChain === "arc") {
+        setStatus("approving");
+        const approved = await runContractChallenge(
+          arcWallet.id,
+          ARC_USDC_ADDRESS,
+          "approve(address,uint256)",
+          [SUGARC_POOL_VAULT_ADDRESS, amountRaw.toString()]
+        );
         if (!approved) {
           setStatus("error");
           return;
         }
 
-        setStatus("gateway_depositing");
-        const gatewayDepositRes = await fetch("/api/endpoints", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            action: "createContractExecutionChallenge",
-            userToken: (await getCreds()).userToken,
-            walletId: sourceWallet.id,
-            contractAddress: GATEWAY_WALLET_ADDRESS,
-            abiFunctionSignature: "deposit(address,uint256)",
-            abiParameters: [sourceUsdc, amountRaw.toString()],
-            feeLevel: "MEDIUM",
-          }),
-        });
-        const gatewayDepositData = await gatewayDepositRes.json();
-        if (!gatewayDepositRes.ok || !gatewayDepositData.challengeId) {
-          setError(
-            gatewayDepositData.message ??
-              gatewayDepositData.error ??
-              "Failed to deposit to Gateway"
-          );
-          setStatus("error");
-          return;
-        }
-        const gatewayDeposited = await executeChallenge(
-          gatewayDepositData.challengeId
+        setStatus("depositing");
+        const deposited = await runContractChallenge(
+          arcWallet.id,
+          SUGARC_POOL_VAULT_ADDRESS,
+          "deposit(uint8,uint256)",
+          [poolId.toString(), amountRaw.toString()]
         );
-        if (!gatewayDeposited) {
+        if (!deposited) {
+          setStatus("error");
+          return;
+        }
+      } else {
+        const sourceWallet = await ensureBaseSepoliaWallet();
+        if (!sourceWallet) return;
+
+        const usdc = USDC_ADDRESSES.baseSepolia;
+
+        setStatus("approving");
+        const approved = await runContractChallenge(
+          sourceWallet.id,
+          usdc,
+          "approve(address,uint256)",
+          [GATEWAY_WALLET_ADDRESS, amountRaw.toString()]
+        );
+        if (!approved) {
           setStatus("error");
           return;
         }
 
-        setStatus("signing_burn");
-        const burnIntent = createBurnIntent({
-          sourceChain: sourceChainKey,
-          depositorAddress: sourceWallet.address,
-          amountRaw: BigInt(amountRaw),
-          recipientAddress: wallet.address,
-        });
-        const typedData = buildBurnIntentTypedData(burnIntent);
+        setStatus("depositing");
+        const deposited = await runContractChallenge(
+          sourceWallet.id,
+          GATEWAY_WALLET_ADDRESS,
+          "deposit(address,uint256)",
+          [usdc, amountRaw.toString()]
+        );
+        if (!deposited) {
+          setStatus("error");
+          return;
+        }
 
-        const signRes = await fetch("/api/endpoints", {
+        const opRes = await fetch("/api/gateway/operator-address");
+        if (!opRes.ok) {
+          setError("Operator not configured");
+          setStatus("error");
+          return;
+        }
+        const { address: operatorAddress } = await opRes.json();
+
+        const authRes = await fetch(
+          `/api/gateway/is-authorized?depositor=${sourceWallet.address}&operator=${operatorAddress}&chain=baseSepolia`
+        );
+        const { authorized } = (await authRes.json()) as { authorized?: boolean };
+        if (!authorized) {
+          setStatus("adding_delegate");
+          const delegateOk = await runContractChallenge(
+            sourceWallet.id,
+            GATEWAY_WALLET_ADDRESS,
+            "addDelegate(address,address)",
+            [usdc, operatorAddress]
+          );
+          if (!delegateOk) {
+            setStatus("error");
+            return;
+          }
+          // Wait for addDelegate tx to be mined before transfer-delegate
+          for (let i = 0; i < 30; i++) {
+            setStatus("confirming_delegate");
+            await new Promise((r) => setTimeout(r, 2000));
+            const checkRes = await fetch(
+              `/api/gateway/is-authorized?depositor=${sourceWallet.address}&operator=${operatorAddress}&chain=baseSepolia`
+            );
+            const { authorized: nowAuthorized } = (await checkRes.json()) as {
+              authorized?: boolean;
+            };
+            if (nowAuthorized) break;
+            if (i === 29) {
+              setError("addDelegate not confirmed in time. Please retry.");
+              setStatus("error");
+              return;
+            }
+          }
+        }
+
+        setStatus("transferring");
+        const transferRes = await fetch("/api/gateway/transfer-delegate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            action: "signTypedData",
-            userToken: (await getCreds()).userToken,
-            walletId: sourceWallet.id,
-            typedData: JSON.stringify(typedData),
-            memo: "Gateway transfer to Arc",
+            depositorAddress: sourceWallet.address,
+            recipientAddress: arcWallet.address,
+            amountRaw: amountRaw.toString(),
+            sourceChain: "baseSepolia",
           }),
         });
-        const signData = await signRes.json();
-        if (!signRes.ok || !signData.challengeId) {
-          setError(signData.message ?? signData.error ?? "Failed to create sign challenge");
-          setStatus("error");
-          return;
-        }
-        const signed = await executeChallenge(signData.challengeId);
-        if (!signed) {
-          setStatus("error");
-          return;
-        }
-
-        const signature = await pollChallengeForSignature(signData.challengeId);
-        if (!signature) {
-          setError("Could not retrieve signature after signing");
-          setStatus("error");
-          return;
-        }
-
-        setStatus("fetching_attestation");
-        const transferPayload = [
-          {
-            burnIntent: {
-              maxBlockHeight: burnIntent.maxBlockHeight.toString(),
-              maxFee: burnIntent.maxFee.toString(),
-              spec: {
-                ...burnIntent.spec,
-                value: burnIntent.spec.value.toString(),
-              },
-            },
-            signature,
-          },
-        ];
-        const gatewayRes = await fetch("/api/gateway/transfer", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(transferPayload),
-        });
-        const gatewayResult = await gatewayRes.json();
-        if (!gatewayRes.ok || !gatewayResult.attestation || !gatewayResult.signature) {
+        const transferData = await transferRes.json();
+        if (!transferRes.ok) {
+          const errMsg = transferData.message ?? transferData.error ?? "Transfer failed";
+          const hint = transferData.hint;
+          const opAddr = transferData.operatorAddress;
           setError(
-            gatewayResult.error ??
-              gatewayResult.message ??
-              "Gateway attestation failed"
+            [errMsg, hint, opAddr && `Operator: ${opAddr}`]
+              .filter(Boolean)
+              .join(" ")
           );
+          setStatus("error");
+          return;
+        }
+
+        const { attestation, signature } = transferData;
+        if (!attestation || !signature) {
+          setError("Invalid attestation response");
           setStatus("error");
           return;
         }
 
         setStatus("minting");
-        const mintRes = await fetch("/api/endpoints", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            action: "createContractExecutionChallenge",
-            userToken: (await getCreds()).userToken,
-            walletId: wallet.id,
-            contractAddress: GATEWAY_MINTER_ADDRESS,
-            abiFunctionSignature: "gatewayMint(bytes,bytes)",
-            abiParameters: [
-              gatewayResult.attestation,
-              gatewayResult.signature,
-            ],
-            feeLevel: "MEDIUM",
-          }),
-        });
-        const mintData = await mintRes.json();
-        if (!mintRes.ok || !mintData.challengeId) {
-          setError(mintData.message ?? mintData.error ?? "Failed to mint on Arc");
-          setStatus("error");
-          return;
-        }
-        const minted = await executeChallenge(mintData.challengeId);
+        const attestationHex = attestation.startsWith("0x") ? attestation : `0x${attestation}`;
+        const signatureHex = signature.startsWith("0x") ? signature : `0x${signature}`;
+
+        const minted = await runContractChallenge(
+          arcWallet.id,
+          GATEWAY_MINTER_ADDRESS,
+          "gatewayMint(bytes,bytes)",
+          [attestationHex, signatureHex]
+        );
         if (!minted) {
           setStatus("error");
           return;
         }
-      }
 
-      setStatus("approving");
-      const approveRes = await fetch("/api/endpoints", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "createContractExecutionChallenge",
-          userToken: (await getCreds()).userToken,
-          walletId: wallet.id,
-          contractAddress: ARC_USDC_ADDRESS,
-          abiFunctionSignature: "approve(address,uint256)",
-          abiParameters: [SUGARC_POOL_VAULT_ADDRESS, amountRaw.toString()],
-          feeLevel: "MEDIUM",
-        }),
-      });
-      const approveData = await approveRes.json();
-      if (!approveRes.ok || !approveData.challengeId) {
-        setError(approveData.message ?? approveData.error ?? "Failed to create approve");
-        setStatus("error");
-        return;
-      }
-      const approved = await executeChallenge(approveData.challengeId);
-      if (!approved) {
-        setStatus("error");
-        return;
-      }
-
-      setStatus("depositing");
-      const depositRes = await fetch("/api/endpoints", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "createContractExecutionChallenge",
-          userToken: (await getCreds()).userToken,
-          walletId: wallet.id,
-          contractAddress: SUGARC_POOL_VAULT_ADDRESS,
-          abiFunctionSignature: "deposit(uint8,uint256)",
-          abiParameters: [poolId, amountRaw.toString()],
-          feeLevel: "MEDIUM",
-        }),
-      });
-      const depositData = await depositRes.json();
-      if (!depositRes.ok || !depositData.challengeId) {
-        setError(
-          depositData.message ?? depositData.error ?? "Failed to create deposit"
+        setStatus("approving");
+        const poolApproved = await runContractChallenge(
+          arcWallet.id,
+          ARC_USDC_ADDRESS,
+          "approve(address,uint256)",
+          [SUGARC_POOL_VAULT_ADDRESS, amountRaw.toString()]
         );
-        setStatus("error");
-        return;
-      }
-      const deposited = await executeChallenge(depositData.challengeId);
-      if (!deposited) {
-        setStatus("error");
-        return;
+        if (!poolApproved) {
+          setStatus("error");
+          return;
+        }
+
+        setStatus("depositing");
+        const poolDeposited = await runContractChallenge(
+          arcWallet.id,
+          SUGARC_POOL_VAULT_ADDRESS,
+          "deposit(uint8,uint256)",
+          [poolId.toString(), amountRaw.toString()]
+        );
+        if (!poolDeposited) {
+          setStatus("error");
+          return;
+        }
       }
 
       setStatus("success");
@@ -461,33 +457,25 @@ export function DepositModal({ pool, onClose, onSuccess }: DepositModalProps) {
     }
   }
 
-  const statusLabel =
-    status === "creating_wallet"
-      ? "Creating wallet…"
-      : status === "gateway_approving"
-        ? "Approving Gateway…"
-        : status === "gateway_depositing"
-          ? "Depositing to Gateway…"
-          : status === "signing_burn"
-            ? "Sign transfer…"
-            : status === "fetching_attestation"
-              ? "Getting attestation…"
-              : status === "minting"
-                ? "Minting on Arc…"
-                : status === "approving"
-                  ? "Approving…"
-                  : status === "depositing"
-                    ? "Depositing…"
-                    : status === "idle"
-                      ? "Deposit"
-                      : status === "success"
-                        ? "Done"
-                        : status === "error"
-                          ? "Retry"
-                          : "Processing…";
+  const statusLabels: Record<string, string> = {
+    creating_wallet: "Creating wallet…",
+    approving: "Approving…",
+    depositing: "Depositing…",
+    adding_delegate: "Adding delegate…",
+    confirming_delegate: "Confirming delegate…",
+    transferring: "Transferring…",
+    minting: "Minting…",
+    idle: "Deposit",
+    success: "Done",
+    error: "Retry",
+  };
+  const statusLabel = statusLabels[status] ?? "Processing…";
 
   const isProcessing =
     status !== "idle" && status !== "success" && status !== "error";
+
+  const effectiveWallet = walletsPerChain.arc ?? wallet;
+  const canDepositFromBaseSepolia = sourceChain === "baseSepolia";
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
@@ -500,39 +488,33 @@ export function DepositModal({ pool, onClose, onSuccess }: DepositModalProps) {
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="text-sm text-muted-foreground">
-            {useGateway
-              ? "Deposit from another chain via Circle Gateway, then add to the pool. Multiple signatures required."
-              : "Approve USDC spend, then deposit into the pool. You will sign twice with your Circle wallet."}
+            {sourceChain === "arc"
+              ? "Approve USDC spend, then deposit into the pool. You will sign twice with your Circle wallet."
+              : "Deposit from Base Sepolia via Gateway. Approve, deposit to Gateway, then mint on Arc and deposit to the pool."}
           </p>
 
-          {useGateway && (
-            <div className="flex flex-col gap-1 rounded-md border border-primary/20 bg-primary/5 px-3 py-2">
-              <p className="text-xs font-medium text-foreground">
-                Multichain via Circle Gateway
-              </p>
-              <p className="text-xs text-muted-foreground">
-                USDC from {sourceChain === "baseSepolia" ? "Base Sepolia" : "Ethereum Sepolia"} → Arc → pool. Deposit finality may take ~15 min before transfer.
-              </p>
-            </div>
-          )}
-
           <div className="space-y-2">
-            <Label>Source chain</Label>
+            <Label htmlFor="source-chain">Source chain</Label>
             <select
-              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              id="source-chain"
               value={sourceChain}
-              onChange={(e) => setSourceChain(e.target.value as DepositChain)}
+              onChange={(e) => setSourceChain(e.target.value as SourceChain)}
               disabled={isProcessing}
+              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
             >
               <option value="arc">Arc (direct)</option>
-              <option value="baseSepolia">Base Sepolia</option>
-              <option value="sepolia">Ethereum Sepolia</option>
+              <option value="baseSepolia">Base Sepolia (Gateway)</option>
             </select>
           </div>
 
-          {!wallet?.address && (
+          {!effectiveWallet?.address && (
             <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
               Connect your Circle wallet to add liquidity.
+            </p>
+          )}
+          {canDepositFromBaseSepolia && !walletsPerChain.baseSepolia && (
+            <p className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-200">
+              A Base Sepolia wallet will be created if you don&apos;t have one.
             </p>
           )}
           <div className="space-y-2">
@@ -549,9 +531,23 @@ export function DepositModal({ pool, onClose, onSuccess }: DepositModalProps) {
             />
           </div>
           {error && (
-            <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800 dark:border-red-800 dark:bg-red-950/30 dark:text-red-200">
-              {error}
-            </p>
+            <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800 dark:border-red-800 dark:bg-red-950/30 dark:text-red-200">
+              <p>{error}</p>
+              {(error.includes("Session expired") ||
+                error.includes("log back in")) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    logout();
+                    onClose();
+                    window.location.href = "/auth";
+                  }}
+                  className="mt-2 font-medium underline hover:no-underline"
+                >
+                  Log out and sign in again →
+                </button>
+              )}
+            </div>
           )}
           {status === "success" && (
             <p className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-200">
@@ -566,7 +562,7 @@ export function DepositModal({ pool, onClose, onSuccess }: DepositModalProps) {
               className="flex-1"
               onClick={handleSubmit}
               disabled={
-                !wallet?.address ||
+                !effectiveWallet?.address ||
                 !amount ||
                 amountRaw <= 0 ||
                 isProcessing

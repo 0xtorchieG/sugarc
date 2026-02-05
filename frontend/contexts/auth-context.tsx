@@ -18,6 +18,20 @@ export type WalletInfo = {
   blockchain: string;
 };
 
+/** USDC balance per chain (Arc, Base Sepolia, Ethereum Sepolia) */
+export type BalancesPerChain = {
+  arc?: string;
+  baseSepolia?: string;
+  sepolia?: string;
+};
+
+/** Wallet per chain for Gateway flow (source chain selection) */
+export type WalletsPerChain = {
+  arc?: WalletInfo;
+  baseSepolia?: WalletInfo;
+  sepolia?: WalletInfo;
+};
+
 type StoredAuth = {
   userToken: string;
   encryptionKey: string;
@@ -28,6 +42,10 @@ type AuthState = {
   encryptionKey: string | null;
   wallet: WalletInfo | null;
   balance: string | null;
+  /** USDC per chain for wallet modal */
+  balancesPerChain: BalancesPerChain;
+  /** Wallet per chain for Gateway flow */
+  walletsPerChain: WalletsPerChain;
   isAuthenticated: boolean;
   isRestoring: boolean;
 };
@@ -38,8 +56,14 @@ type AuthContextValue = AuthState & {
     encryptionKey: string;
     wallet?: WalletInfo | null;
     balance?: string | null;
+    balancesPerChain?: BalancesPerChain;
   }) => void;
-  setWalletInfo: (wallet: WalletInfo | null, balance: string | null) => void;
+  setWalletInfo: (
+    wallet: WalletInfo | null,
+    balance: string | null,
+    balancesPerChain?: BalancesPerChain,
+    walletsPerChain?: WalletsPerChain
+  ) => void;
   logout: () => void;
   refreshWallet: () => Promise<void>;
 };
@@ -59,12 +83,22 @@ function loadStoredLogin(): StoredAuth | null {
   return null;
 }
 
-function loadStoredWallet(): { wallet: WalletInfo; balance: string } | null {
+function loadStoredWallet(): {
+  wallet: WalletInfo;
+  balance: string;
+  balancesPerChain?: BalancesPerChain;
+  walletsPerChain?: WalletsPerChain;
+} | null {
   if (typeof window === "undefined") return null;
   try {
     const raw = window.sessionStorage.getItem(WALLET_STORAGE_KEY);
     if (!raw) return null;
-    const parsed = JSON.parse(raw) as { wallet: WalletInfo; balance: string };
+    const parsed = JSON.parse(raw) as {
+      wallet: WalletInfo;
+      balance: string;
+      balancesPerChain?: BalancesPerChain;
+      walletsPerChain?: WalletsPerChain;
+    };
     if (parsed?.wallet?.address) return parsed;
   } catch {
     // ignore
@@ -72,9 +106,20 @@ function loadStoredWallet(): { wallet: WalletInfo; balance: string } | null {
   return null;
 }
 
+/** Map Circle blockchain ID to our chain key */
+function chainKeyFromBlockchain(b: string): keyof BalancesPerChain | null {
+  const u = (b ?? "").toUpperCase();
+  if (u.includes("ARC")) return "arc";
+  if (u.includes("BASE")) return "baseSepolia";
+  if (u.includes("ETH") && u.includes("SEPOLIA")) return "sepolia";
+  return null;
+}
+
 async function fetchWalletsAndBalance(userToken: string): Promise<{
   wallet: WalletInfo | null;
   balance: string | null;
+  balancesPerChain: BalancesPerChain;
+  walletsPerChain: WalletsPerChain;
 }> {
   try {
     const res = await fetch("/api/endpoints", {
@@ -83,32 +128,61 @@ async function fetchWalletsAndBalance(userToken: string): Promise<{
       body: JSON.stringify({ action: "listWallets", userToken }),
     });
     const data = await res.json();
-    if (!res.ok || !data.wallets?.length) return { wallet: null, balance: null };
+    if (!res.ok || !data.wallets?.length) {
+      return {
+        wallet: null,
+        balance: null,
+        balancesPerChain: {},
+        walletsPerChain: {},
+      };
+    }
 
-    const wallet = data.wallets[0] as WalletInfo;
+    const wallets = data.wallets as WalletInfo[];
+    const primary = wallets[0];
+    const balancesPerChain: BalancesPerChain = {};
+    const walletsPerChain: WalletsPerChain = {};
 
-    const balanceRes = await fetch("/api/endpoints", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        action: "getTokenBalance",
-        userToken,
-        walletId: wallet.id,
-      }),
-    });
-    const balanceData = await balanceRes.json();
-    const balances =
-      (balanceData.tokenBalances as { token?: { symbol?: string }; amount?: string }[]) || [];
-    const usdc = balances.find(
-      (b) =>
-        (b.token?.symbol ?? "").startsWith("USDC") ||
-        (b.token?.symbol ?? "").includes("USDC")
-    );
-    const balance = usdc?.amount ?? "0";
+    for (const w of wallets) {
+      const key = chainKeyFromBlockchain(w.blockchain);
+      if (!key) continue;
+      walletsPerChain[key] = w;
+      const balanceRes = await fetch("/api/endpoints", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "getTokenBalance",
+          userToken,
+          walletId: w.id,
+        }),
+      });
+      const balanceData = await balanceRes.json();
+      const balances =
+        (balanceData.tokenBalances as {
+          token?: { symbol?: string };
+          amount?: string;
+        }[]) || [];
+      const usdc = balances.find(
+        (b) =>
+          (b.token?.symbol ?? "").startsWith("USDC") ||
+          (b.token?.symbol ?? "").includes("USDC")
+      );
+      balancesPerChain[key] = usdc?.amount ?? "0";
+    }
 
-    return { wallet, balance };
+    const arcBalance = balancesPerChain.arc ?? "0";
+    return {
+      wallet: primary,
+      balance: arcBalance,
+      balancesPerChain,
+      walletsPerChain,
+    };
   } catch {
-    return { wallet: null, balance: null };
+    return {
+      wallet: null,
+      balance: null,
+      balancesPerChain: {},
+      walletsPerChain: {},
+    };
   }
 }
 
@@ -118,6 +192,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     encryptionKey: null,
     wallet: null,
     balance: null,
+    balancesPerChain: {},
+    walletsPerChain: {},
     isAuthenticated: false,
     isRestoring: true,
   });
@@ -128,8 +204,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       encryptionKey: string;
       wallet?: WalletInfo | null;
       balance?: string | null;
+      balancesPerChain?: BalancesPerChain;
     }) => {
-      const { userToken, encryptionKey, wallet = null, balance = null } = params;
+      const {
+        userToken,
+        encryptionKey,
+        wallet = null,
+        balance = null,
+        balancesPerChain = {},
+      } = params;
       if (typeof window !== "undefined") {
         window.sessionStorage.setItem(
           STORAGE_KEY,
@@ -138,7 +221,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (wallet) {
           window.sessionStorage.setItem(
             WALLET_STORAGE_KEY,
-            JSON.stringify({ wallet, balance: balance ?? "0" })
+            JSON.stringify({
+              wallet,
+              balance: balance ?? "0",
+              balancesPerChain: balancesPerChain ?? {},
+            })
           );
         }
       }
@@ -147,6 +234,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         encryptionKey,
         wallet: wallet ?? null,
         balance: balance ?? null,
+        balancesPerChain: params.balancesPerChain ?? {},
+        walletsPerChain: {},
         isAuthenticated: true,
         isRestoring: false,
       });
@@ -154,19 +243,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     []
   );
 
-  const setWalletInfo = useCallback((wallet: WalletInfo | null, balance: string | null) => {
-    if (wallet && typeof window !== "undefined") {
-      window.sessionStorage.setItem(
-        WALLET_STORAGE_KEY,
-        JSON.stringify({ wallet, balance: balance ?? "0" })
-      );
-    }
-    setState((prev) => ({
-      ...prev,
-      wallet,
-      balance,
-    }));
-  }, []);
+  const setWalletInfo = useCallback(
+    (
+      wallet: WalletInfo | null,
+      balance: string | null,
+      balancesPerChain?: BalancesPerChain,
+      walletsPerChain?: WalletsPerChain
+    ) => {
+      if (wallet && typeof window !== "undefined") {
+        window.sessionStorage.setItem(
+          WALLET_STORAGE_KEY,
+          JSON.stringify({
+            wallet,
+            balance: balance ?? "0",
+            balancesPerChain: balancesPerChain ?? {},
+            walletsPerChain: walletsPerChain ?? {},
+          })
+        );
+      }
+      setState((prev) => ({
+        ...prev,
+        wallet,
+        balance,
+        balancesPerChain: balancesPerChain ?? prev.balancesPerChain ?? {},
+        walletsPerChain: walletsPerChain ?? prev.walletsPerChain ?? {},
+      }));
+    },
+    []
+  );
 
   const logout = useCallback(() => {
     if (typeof window !== "undefined") {
@@ -178,6 +282,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       encryptionKey: null,
       wallet: null,
       balance: null,
+      balancesPerChain: {},
+      walletsPerChain: {},
       isAuthenticated: false,
       isRestoring: false,
     });
@@ -186,12 +292,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const refreshWallet = useCallback(async () => {
     const stored = loadStoredLogin();
     if (!stored?.userToken) return;
-    const { wallet, balance } = await fetchWalletsAndBalance(stored.userToken);
-    setWalletInfo(wallet, balance);
+    const { wallet, balance, balancesPerChain, walletsPerChain } =
+      await fetchWalletsAndBalance(stored.userToken);
+    setWalletInfo(wallet, balance, balancesPerChain, walletsPerChain);
     if (wallet && typeof window !== "undefined") {
       window.sessionStorage.setItem(
         WALLET_STORAGE_KEY,
-        JSON.stringify({ wallet, balance: balance ?? "0" })
+        JSON.stringify({
+          wallet,
+          balance: balance ?? "0",
+          balancesPerChain: balancesPerChain ?? {},
+          walletsPerChain: walletsPerChain ?? {},
+        })
       );
     }
   }, [setWalletInfo]);
@@ -210,6 +322,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         encryptionKey: stored.encryptionKey,
         wallet: cached.wallet,
         balance: cached.balance,
+        balancesPerChain: cached.balancesPerChain ?? {},
+        walletsPerChain: cached.walletsPerChain ?? {},
         isAuthenticated: true,
         isRestoring: false,
       });
@@ -224,19 +338,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       isRestoring: false,
     }));
 
-    void fetchWalletsAndBalance(stored.userToken).then(({ wallet, balance }) => {
-      setState((prev) => ({
-        ...prev,
-        wallet,
-        balance,
-      }));
-      if (wallet && typeof window !== "undefined") {
-        window.sessionStorage.setItem(
-          WALLET_STORAGE_KEY,
-          JSON.stringify({ wallet, balance: balance ?? "0" })
-        );
+    void fetchWalletsAndBalance(stored.userToken).then(
+      ({ wallet, balance, balancesPerChain, walletsPerChain }) => {
+        setState((prev) => ({
+          ...prev,
+          wallet,
+          balance,
+          balancesPerChain: balancesPerChain ?? {},
+          walletsPerChain: walletsPerChain ?? {},
+        }));
+        if (wallet && typeof window !== "undefined") {
+          window.sessionStorage.setItem(
+            WALLET_STORAGE_KEY,
+            JSON.stringify({
+              wallet,
+              balance: balance ?? "0",
+              balancesPerChain: balancesPerChain ?? {},
+              walletsPerChain: walletsPerChain ?? {},
+            })
+          );
+        }
       }
-    });
+    );
   }, []);
 
   const value = useMemo<AuthContextValue>(

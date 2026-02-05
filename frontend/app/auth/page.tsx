@@ -16,12 +16,12 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Container } from "@/components/layout/container";
 import { useAuth } from "@/contexts/auth-context";
-import type { WalletInfo } from "@/contexts/auth-context";
+import type { WalletInfo, BalancesPerChain, WalletsPerChain } from "@/contexts/auth-context";
 
 const appId = process.env.NEXT_PUBLIC_CIRCLE_APP_ID as string;
 const googleClientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID as string;
 
-type LoginResult = { userToken: string; encryptionKey: string };
+type LoginResult = { userToken: string; encryptionKey: string; refreshToken?: string };
 
 type Wallet = { id: string; address: string; blockchain: string; [key: string]: unknown };
 
@@ -78,7 +78,7 @@ export default function AuthPage() {
     const initSdk = async () => {
       try {
         const { W3SSdk } = await import("@circle-fin/w3s-pw-web-sdk");
-        const onLoginComplete = (error: unknown, result?: { userToken?: string; encryptionKey?: string }) => {
+        const onLoginComplete = (error: unknown, result?: { userToken?: string; encryptionKey?: string; refreshToken?: string }) => {
           if (error) {
             const err = error as { message?: string };
             if (acceptingLoginRef.current) {
@@ -91,12 +91,14 @@ export default function AuthPage() {
           }
           const userToken = result?.userToken;
           const encryptionKey = result?.encryptionKey;
+          const refreshToken = result?.refreshToken;
           if (!userToken || !encryptionKey) return;
+          const toStore = { userToken, encryptionKey, ...(refreshToken && { refreshToken }) };
           if (typeof window !== "undefined") {
-            window.sessionStorage.setItem("circle_login_result", JSON.stringify({ userToken, encryptionKey }));
+            window.sessionStorage.setItem("circle_login_result", JSON.stringify(toStore));
           }
           if (acceptingLoginRef.current) {
-            setLoginResult({ userToken, encryptionKey });
+            setLoginResult({ userToken, encryptionKey, ...(refreshToken && { refreshToken }) });
             setLoginError(null);
             setStatus("Login successful. Credentials received from Google.");
           }
@@ -242,6 +244,14 @@ export default function AuthPage() {
     });
   }, [challengeId, loginResult?.userToken, loginResult?.encryptionKey, wallets.length]);
 
+  function chainKeyFromBlockchain(b: string): keyof BalancesPerChain | null {
+    const u = (b ?? "").toUpperCase();
+    if (u.includes("ARC")) return "arc";
+    if (u.includes("BASE")) return "baseSepolia";
+    if (u.includes("ETH") && u.includes("SEPOLIA")) return "sepolia";
+    return null;
+  }
+
   async function loadUsdcBalance(userToken: string, walletId: string) {
     try {
       const response = await fetch("/api/endpoints", {
@@ -283,17 +293,37 @@ export default function AuthPage() {
       const walletList = (data.wallets as Wallet[]) || [];
       setWallets(walletList);
       if (walletList.length > 0) {
-        const balance = await loadUsdcBalance(userToken, walletList[0].id);
+        const balancesPerChain: BalancesPerChain = {};
+        const walletsPerChain: WalletsPerChain = {};
+        for (const w of walletList) {
+          const key = chainKeyFromBlockchain(w.blockchain);
+          if (!key) continue;
+          walletsPerChain[key] = { id: w.id, address: w.address, blockchain: w.blockchain };
+          const res = await fetch("/api/endpoints", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "getTokenBalance", userToken, walletId: w.id }),
+          });
+          const balData = await res.json();
+          const balList = (balData.tokenBalances as { token?: { symbol?: string }; amount?: string }[]) || [];
+          const usdc = balList.find(
+            (b) => (b.token?.symbol ?? "").startsWith("USDC") || (b.token?.symbol ?? "").includes("USDC")
+          );
+          balancesPerChain[key] = usdc?.amount ?? "0";
+        }
         const primary = walletList[0];
+        const balance = balancesPerChain.arc ?? "0";
+        setUsdcBalance(balance);
         const walletInfo = { id: primary.id, address: primary.address, blockchain: primary.blockchain };
         if (options?.source === "afterCreate" || options?.source === "alreadyInitialized") {
           setAuth({
             userToken,
             encryptionKey: loginResult?.encryptionKey ?? "",
             wallet: walletInfo,
-            balance: balance ?? "0",
+            balance,
+            balancesPerChain,
           });
-          setWalletInfo(walletInfo, balance ?? "0");
+          setWalletInfo(walletInfo, balance, balancesPerChain, walletsPerChain);
         }
         setStatus(
           options?.source === "afterCreate"

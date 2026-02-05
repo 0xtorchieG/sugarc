@@ -45,7 +45,7 @@ function UserPlaceholderIcon({ className }: { className?: string }) {
 
 export function Header() {
   const pathname = usePathname();
-  const { isAuthenticated, isRestoring, wallet, balance, logout } = useAuth();
+  const { isAuthenticated, isRestoring, wallet, balance, balancesPerChain, logout } = useAuth();
   const [copied, setCopied] = useState(false);
 
   async function copyAddress(e: React.MouseEvent | React.KeyboardEvent) {
@@ -111,9 +111,9 @@ export function Header() {
                           {wallet ? truncateAddress(wallet.address) : "…"}
                         </span>
                       </span>
-                      {balance !== null && (
+                      {(balance !== null || Object.keys(balancesPerChain ?? {}).length > 0) && (
                         <span className="hidden rounded-full bg-primary/10 px-2 py-0.5 font-mono text-xs text-primary md:inline">
-                          {balance} USDC
+                          {balance ?? "0"} USDC
                         </span>
                       )}
                       <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
@@ -161,17 +161,36 @@ export function Header() {
                     </div>
 
                     {/* Balance */}
-                    {balance !== null && (
+                    {(balance !== null || Object.keys(balancesPerChain ?? {}).length > 0) && (
                       <div className="px-4 pb-3">
                         <Card className="border-border/80 bg-muted/30">
                           <CardContent className="p-3">
                             <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
                               USDC balance
                             </p>
-                            <p className="mt-1 text-xl font-semibold tabular-nums text-primary">
-                              {balance}
-                            </p>
-                            <p className="mt-0.5 text-xs text-muted-foreground">
+                            <div className="mt-1 space-y-1">
+                              {(balancesPerChain?.arc ?? balancesPerChain?.baseSepolia ?? balancesPerChain?.sepolia) != null ? (
+                                <>
+                                  <p className="text-sm tabular-nums">
+                                    <span className="text-muted-foreground">Arc:</span>{" "}
+                                    <span className="font-semibold text-primary">{balancesPerChain?.arc ?? "0"}</span>
+                                  </p>
+                                  <p className="text-sm tabular-nums">
+                                    <span className="text-muted-foreground">Base Sepolia:</span>{" "}
+                                    <span className="font-semibold text-primary">{balancesPerChain?.baseSepolia ?? "0"}</span>
+                                  </p>
+                                  <p className="text-sm tabular-nums">
+                                    <span className="text-muted-foreground">Ethereum Sepolia:</span>{" "}
+                                    <span className="font-semibold text-primary">{balancesPerChain?.sepolia ?? "0"}</span>
+                                  </p>
+                                </>
+                              ) : (
+                                <p className="text-xl font-semibold tabular-nums text-primary">
+                                  {balance ?? "0"}
+                                </p>
+                              )}
+                            </div>
+                            <p className="mt-1 text-xs text-muted-foreground">
                               Available to deposit / fund invoices
                             </p>
                           </CardContent>
