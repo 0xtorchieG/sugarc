@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import {
   ChevronDown,
@@ -61,14 +62,31 @@ export function Header() {
     }
   }
 
+  const isHome = pathname === "/";
+
   return (
-    <header className="sticky top-0 z-50 w-full border-b border-input/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+    <header
+      className={cn(
+        "sticky top-0 z-50 w-full transition-colors duration-300",
+        isHome
+          ? "border-b border-white/20 bg-white/40 backdrop-blur-md supports-[backdrop-filter]:bg-white/30"
+          : "border-b border-input/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60"
+      )}
+    >
       <div className="container mx-auto flex h-14 max-w-6xl items-center justify-between px-4">
         <Link
           href="/"
           className="flex items-center gap-2 font-semibold text-foreground"
+          aria-label="Sugarc home"
         >
-          🍬 Sugarc
+          <Image
+            src="/logo-banner.png"
+            alt="Sugarc"
+            width={140}
+            height={40}
+            className="h-8 w-auto object-contain"
+            priority
+          />
         </Link>
         <nav className="flex items-center gap-1 sm:gap-2">
           {navLinks.map(({ href, label }) => (

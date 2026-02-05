@@ -5,7 +5,17 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Sugarc",
-  description: "Tokenized invoice factoring on Arc",
+  description: "Tokenized invoice factoring on Arc — melt invoices into liquidity, instantly.",
+  icons: {
+    icon: "/icon.png",
+    apple: "/apple-icon.png",
+  },
+  manifest: "/manifest.json",
+  openGraph: {
+    title: "Sugarc",
+    description: "Tokenized invoice factoring on Arc — melt invoices into liquidity, instantly.",
+    images: ["/logo-banner.png"],
+  },
 };
 
 export default function RootLayout({
