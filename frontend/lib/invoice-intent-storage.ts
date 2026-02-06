@@ -48,9 +48,20 @@ const REDIS_KEY = "sugarc:invoice-intents";
 const DATA_DIR = "data";
 const FILE_NAME = "invoice-intents.json";
 
-/** Use Redis when Upstash env vars are set (Vercel injects these via Marketplace integration). */
+/** On Vercel, always use Redis (filesystem is read-only). Locally, use Redis if configured else file. */
 function useRedis(): boolean {
-  return !!(process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN);
+  const hasRedis =
+    (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN) ||
+    (process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN);
+  if (process.env.VERCEL) {
+    if (!hasRedis) {
+      throw new Error(
+        "On Vercel, Redis is required. Add Upstash Redis from Storage/Integrations and ensure UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN are set for Production."
+      );
+    }
+    return true;
+  }
+  return !!hasRedis;
 }
 
 function dataPath(): string {
@@ -76,9 +87,20 @@ async function readFromFile(): Promise<InvoiceIntentRecord[]> {
   }
 }
 
-async function readFromRedis(): Promise<InvoiceIntentRecord[]> {
+async function getRedisClient() {
+  const url =
+    process.env.UPSTASH_REDIS_REST_URL ?? process.env.KV_REST_API_URL;
+  const token =
+    process.env.UPSTASH_REDIS_REST_TOKEN ?? process.env.KV_REST_API_TOKEN;
+  if (!url || !token) {
+    throw new Error("Redis URL or token not set");
+  }
   const { Redis } = await import("@upstash/redis");
-  const redis = Redis.fromEnv();
+  return new Redis({ url, token });
+}
+
+async function readFromRedis(): Promise<InvoiceIntentRecord[]> {
+  const redis = await getRedisClient();
   const raw = await redis.get<string>(REDIS_KEY);
   if (!raw) return [];
   try {
@@ -100,8 +122,7 @@ async function writeToFile(intents: InvoiceIntentRecord[]): Promise<void> {
 }
 
 async function writeToRedis(intents: InvoiceIntentRecord[]): Promise<void> {
-  const { Redis } = await import("@upstash/redis");
-  const redis = Redis.fromEnv();
+  const redis = await getRedisClient();
   await redis.set(REDIS_KEY, JSON.stringify(intents));
 }
 
