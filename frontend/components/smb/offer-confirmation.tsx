@@ -84,7 +84,14 @@ export function OfferConfirmation({
       });
       const data = await res.json();
       if (!res.ok) {
-        setErrorMessage(data.error ?? "Request failed");
+        const detail = data.details?.fieldErrors
+          ? Object.entries(data.details.fieldErrors)
+              .flatMap(([k, v]) => (Array.isArray(v) ? v : [v]).map((e: string) => `${k}: ${e}`))
+              .join("; ")
+          : data.details?.formErrors?.join?.("; ") ?? data.details;
+        setErrorMessage(
+          [data.error, detail].filter(Boolean).join(" — ") || "Request failed"
+        );
         setStatus("error");
         return;
       }

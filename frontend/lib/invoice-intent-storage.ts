@@ -1,6 +1,7 @@
 /**
- * Hackathon-fast JSON file store for invoice intents.
- * Path: data/invoice-intents.json (relative to process.cwd()).
+ * Invoice intent storage: Upstash Redis on Vercel, JSON file locally.
+ * Vercel serverless has a read-only filesystem, so we use Redis when
+ * UPSTASH_REDIS_REST_URL is set (via Vercel Marketplace Upstash integration).
  */
 
 import fs from "fs/promises";
@@ -43,8 +44,13 @@ export interface InvoiceIntentRecord {
   createdAt: string;
 }
 
+const REDIS_KEY = "sugarc:invoice-intents";
 const DATA_DIR = "data";
 const FILE_NAME = "invoice-intents.json";
+
+function useRedis(): boolean {
+  return !!process.env.UPSTASH_REDIS_REST_URL;
+}
 
 function dataPath(): string {
   return path.join(process.cwd(), DATA_DIR, FILE_NAME);
@@ -55,7 +61,7 @@ async function ensureDataDir(): Promise<void> {
   await fs.mkdir(dir, { recursive: true });
 }
 
-export async function readIntents(): Promise<InvoiceIntentRecord[]> {
+async function readFromFile(): Promise<InvoiceIntentRecord[]> {
   await ensureDataDir();
   const filePath = dataPath();
   try {
@@ -69,7 +75,20 @@ export async function readIntents(): Promise<InvoiceIntentRecord[]> {
   }
 }
 
-export async function writeIntents(intents: InvoiceIntentRecord[]): Promise<void> {
+async function readFromRedis(): Promise<InvoiceIntentRecord[]> {
+  const { Redis } = await import("@upstash/redis");
+  const redis = Redis.fromEnv();
+  const raw = await redis.get<string>(REDIS_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+async function writeToFile(intents: InvoiceIntentRecord[]): Promise<void> {
   await ensureDataDir();
   const filePath = dataPath();
   await fs.writeFile(
@@ -77,6 +96,20 @@ export async function writeIntents(intents: InvoiceIntentRecord[]): Promise<void
     JSON.stringify({ intents }, null, 2),
     "utf-8"
   );
+}
+
+async function writeToRedis(intents: InvoiceIntentRecord[]): Promise<void> {
+  const { Redis } = await import("@upstash/redis");
+  const redis = Redis.fromEnv();
+  await redis.set(REDIS_KEY, JSON.stringify(intents));
+}
+
+export async function readIntents(): Promise<InvoiceIntentRecord[]> {
+  return useRedis() ? readFromRedis() : readFromFile();
+}
+
+export async function writeIntents(intents: InvoiceIntentRecord[]): Promise<void> {
+  return useRedis() ? writeToRedis(intents) : writeToFile(intents);
 }
 
 export async function addIntent(record: InvoiceIntentRecord): Promise<void> {

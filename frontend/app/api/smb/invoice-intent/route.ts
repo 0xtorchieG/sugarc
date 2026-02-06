@@ -148,9 +148,13 @@ export async function POST(request: NextRequest) {
     });
   } catch (err) {
     console.error("invoice-intent POST", err);
+    const message = err instanceof Error ? err.message : "Unknown error";
     return NextResponse.json(
-      { error: "Invalid request" },
-      { status: 400 }
+      {
+        error: "Storage error",
+        details: process.env.NODE_ENV === "development" ? message : undefined,
+      },
+      { status: 500 }
     );
   }
 }
