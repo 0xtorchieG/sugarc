@@ -2,7 +2,7 @@
 
 Tokenized invoice factoring on Arc — ETHGlobal Hack Money hackathon project.
 
-Monorepo: **frontend** (Next.js + TypeScript + ShadcnUI + thirdweb), **contracts** (Solidity + Hardhat), **backend** (Node.js + TypeScript).
+Monorepo: **frontend** (Next.js + TypeScript + ShadcnUI), **contracts** (Solidity + Hardhat), **backend** (Node.js + TypeScript).
 
 Run all commands below from this repo root (the folder that contains `package.json` and `frontend/`).
 
