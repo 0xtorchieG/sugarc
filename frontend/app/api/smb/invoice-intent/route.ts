@@ -152,7 +152,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         error: "Storage error",
-        details: process.env.NODE_ENV === "development" ? message : undefined,
+        details: message,
       },
       { status: 500 }
     );

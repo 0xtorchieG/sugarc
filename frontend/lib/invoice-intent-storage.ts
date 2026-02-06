@@ -48,8 +48,9 @@ const REDIS_KEY = "sugarc:invoice-intents";
 const DATA_DIR = "data";
 const FILE_NAME = "invoice-intents.json";
 
+/** Use Redis when Upstash env vars are set (Vercel injects these via Marketplace integration). */
 function useRedis(): boolean {
-  return !!process.env.UPSTASH_REDIS_REST_URL;
+  return !!(process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN);
 }
 
 function dataPath(): string {
