@@ -1,10 +1,11 @@
 /**
  * Pending Circle Mint wire → invoice mapping (BE-008).
- * Hackathon-fast JSON file store.
+ * Uses Redis on Vercel, JSON file locally.
  */
 
 import fs from "fs/promises";
 import path from "path";
+import { useRedis, getRedisClient } from "./redis";
 
 export type PendingMintWire = {
   invoiceId: string;
@@ -13,6 +14,7 @@ export type PendingMintWire = {
   createDate: string;
 };
 
+const REDIS_KEY = "sugarc:pending-mint-wires";
 const DATA_DIR = "data";
 const FILE_NAME = "pending-mint-wires.json";
 
@@ -24,7 +26,7 @@ async function ensureDataDir(): Promise<void> {
   await fs.mkdir(path.join(process.cwd(), DATA_DIR), { recursive: true });
 }
 
-async function readPending(): Promise<PendingMintWire[]> {
+async function readFromFile(): Promise<PendingMintWire[]> {
   await ensureDataDir();
   try {
     const raw = await fs.readFile(dataPath(), "utf-8");
@@ -37,13 +39,38 @@ async function readPending(): Promise<PendingMintWire[]> {
   }
 }
 
-async function writePending(wires: PendingMintWire[]): Promise<void> {
+async function readFromRedis(): Promise<PendingMintWire[]> {
+  const redis = await getRedisClient();
+  const raw = await redis.get<string>(REDIS_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+async function writeToFile(wires: PendingMintWire[]): Promise<void> {
   await ensureDataDir();
   await fs.writeFile(
     dataPath(),
     JSON.stringify({ wires }, null, 2),
     "utf-8"
   );
+}
+
+async function writeToRedis(wires: PendingMintWire[]): Promise<void> {
+  const redis = await getRedisClient();
+  await redis.set(REDIS_KEY, JSON.stringify(wires));
+}
+
+async function readPending(): Promise<PendingMintWire[]> {
+  return useRedis() ? readFromRedis() : readFromFile();
+}
+
+async function writePending(wires: PendingMintWire[]): Promise<void> {
+  return useRedis() ? writeToRedis(wires) : writeToFile(wires);
 }
 
 export async function addPendingWire(wire: PendingMintWire): Promise<void> {

@@ -1,11 +1,10 @@
 /**
- * Invoice intent storage: Upstash Redis on Vercel, JSON file locally.
- * Vercel serverless has a read-only filesystem, so we use Redis when
- * UPSTASH_REDIS_REST_URL is set (via Vercel Marketplace Upstash integration).
+ * Invoice intent storage: Redis on Vercel (KV_REST_API_*), JSON file locally.
  */
 
 import fs from "fs/promises";
 import path from "path";
+import { useRedis, getRedisClient } from "./redis";
 
 export type InvoiceIntentStatus = "pending" | "funded" | "settled" | "cancelled";
 
@@ -48,22 +47,6 @@ const REDIS_KEY = "sugarc:invoice-intents";
 const DATA_DIR = "data";
 const FILE_NAME = "invoice-intents.json";
 
-/** On Vercel, always use Redis (filesystem is read-only). Locally, use Redis if configured else file. */
-function useRedis(): boolean {
-  const hasRedis =
-    (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN) ||
-    (process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN);
-  if (process.env.VERCEL) {
-    if (!hasRedis) {
-      throw new Error(
-        "On Vercel, Redis is required. Add Upstash Redis from Storage/Integrations and ensure UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN are set for Production."
-      );
-    }
-    return true;
-  }
-  return !!hasRedis;
-}
-
 function dataPath(): string {
   return path.join(process.cwd(), DATA_DIR, FILE_NAME);
 }
@@ -85,18 +68,6 @@ async function readFromFile(): Promise<InvoiceIntentRecord[]> {
     if (code === "ENOENT") return [];
     throw err;
   }
-}
-
-async function getRedisClient() {
-  const url =
-    process.env.UPSTASH_REDIS_REST_URL ?? process.env.KV_REST_API_URL;
-  const token =
-    process.env.UPSTASH_REDIS_REST_TOKEN ?? process.env.KV_REST_API_TOKEN;
-  if (!url || !token) {
-    throw new Error("Redis URL or token not set");
-  }
-  const { Redis } = await import("@upstash/redis");
-  return new Redis({ url, token });
 }
 
 async function readFromRedis(): Promise<InvoiceIntentRecord[]> {
