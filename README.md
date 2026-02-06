@@ -34,13 +34,13 @@ npm install
 
 ```
 sugarc/
-├── frontend/   # Next.js, ShadcnUI, thirdweb SDK
+├── frontend/   # Next.js, ShadcnUI
 ├── contracts/  # Solidity, Hardhat
 ├── backend/    # Express, TypeScript
 └── package.json
 ```
 
-## Circle Mint: Bank Wire → Onchain Repayment (BE-008)
+## Circle Mint: Bank Wire → Onchain Repayment
 
 **This is the real production integration point** for invoice factoring: when a payer sends a bank wire, it settles the onchain repayment. Uses the same [Circle Mint quickstart](https://developers.circle.com/circle-mint/quickstart-deposit-via-funds-transfer#testing) mock wire flow.
 
